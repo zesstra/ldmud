@@ -439,6 +439,10 @@ static word_t samagic[]
 
 #endif /* MALLOC_CHECK */
 
+#ifdef MEM_FRAGMENTATION_IMAGE
+#include "mem_image.c"
+#endif
+
 /*-------------------------------------------------------------------------*/
 /* Debugging macros */
 
@@ -4129,16 +4133,24 @@ mem_free_unrefed_slab_memory ( const char * tag
             *p |= M_REF;
             sfree(p+M_OVERHEAD);
         }
-#if 0 && defined(DEBUG_MALLOC_ALLOCS)
         else
+        {
+#if 0 && defined(DEBUG_MALLOC_ALLOCS)
             ulog1f("slaballoc:   block %x is ref'd\n", p);
 #endif /* DEBUG_MALLOC_ALLOCS */
+#ifdef MEM_FRAGMENTATION_IMAGE
+            if ((*p & THIS_BLOCK) == THIS_BLOCK)
+                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY);
+#endif // MEM_FRAGMENTATION_IMAGE
+        }
 
         p += slab->size / GRANULARITY;
     }
 
     return success;
 } /* mem_free_unrefed_slab_memory() */
+
+
 
 /*-------------------------------------------------------------------------*/
 void
@@ -4155,6 +4167,9 @@ mem_free_unrefed_memory (void)
 
     /* Scan the heap for lost large blocks */
     last = heap_end - TL_OVERHEAD;
+#ifdef MEM_FRAGMENTATION_IMAGE
+    mem_image_new(last-heap_start);
+#endif
     for (p = heap_start; p < last; )
     {
         word_t size, flags;
@@ -4188,6 +4203,12 @@ mem_free_unrefed_memory (void)
             if ( !(flags2 & THIS_BLOCK) )
                 size += size2;
         }
+#ifdef MEM_FRAGMENTATION_IMAGE
+        else if ((flags & THIS_BLOCK) == THIS_BLOCK)    // block is allocated.
+        {
+            mem_image_mark_alloced(p-heap_start, size);
+        }
+#endif
         p += size;
     }
     if (success)
@@ -4235,6 +4256,9 @@ mem_free_unrefed_memory (void)
     {
         dprintf1(gcollect_outfd, "%d small blocks freed\n", success);
     }
+#ifdef MEM_FRAGMENTATION_IMAGE
+    mem_image_free();
+#endif
 } /* mem_free_unrefed_memory() */
 
 /*-------------------------------------------------------------------------*/

@@ -649,4 +649,7 @@
  */
 @cdef_dump_gc_refs@ DUMP_GC_REFS
 
+/* Dump information about the allocation state of each word in memory. */
+#define MEM_FRAGMENTATION_IMAGE
+
 #endif /* CONFIG_H__ */
