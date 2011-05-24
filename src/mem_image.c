@@ -77,12 +77,12 @@ mem_image_new(size_t size)
 }
 
 static INLINE void
-mem_image_mark_alloced(intptr_t start, size_t size)
+mem_image_mark_alloced(intptr_t start, size_t size, unsigned char val)
 /* marks the words from start to end (including) as allocated
  * both are given in words.
  */
 {
     if (mem_image && start+size <= mem_image_size)
-        memset(mem_image+start, 0, size);
+        memset(mem_image+start, val, size);
 }
 #endif // MEM_FRAGMENTATION_IMAGE

@@ -4132,6 +4132,9 @@ mem_free_unrefed_slab_memory ( const char * tag
             /* Recover the block */
             *p |= M_REF;
             sfree(p+M_OVERHEAD);
+#ifdef MEM_FRAGMENTATION_IMAGE
+            mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 222);
+#endif
         }
         else
         {
@@ -4139,8 +4142,10 @@ mem_free_unrefed_slab_memory ( const char * tag
             ulog1f("slaballoc:   block %x is ref'd\n", p);
 #endif /* DEBUG_MALLOC_ALLOCS */
 #ifdef MEM_FRAGMENTATION_IMAGE
-            if ((*p & THIS_BLOCK) == THIS_BLOCK)
-                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY);
+            if ((*p & THIS_BLOCK) == THIS_BLOCK) // NOT allocated
+                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 222);
+            else
+                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 32);
 #endif // MEM_FRAGMENTATION_IMAGE
         }
 
@@ -4206,7 +4211,7 @@ mem_free_unrefed_memory (void)
 #ifdef MEM_FRAGMENTATION_IMAGE
         else if ((flags & THIS_BLOCK) == THIS_BLOCK)    // block is allocated.
         {
-            mem_image_mark_alloced(p-heap_start, size);
+            mem_image_mark_alloced(p-heap_start, size, 0);
         }
 #endif
         p += size;
