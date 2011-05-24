@@ -2,8 +2,6 @@
  *  mem_image.c
  *  LDMud
  *
- *  Created by Dominik Schäfer on 21.05.11.
- *  Copyright 2011 Ruhr-Uni-Bochum. All rights reserved.
  *
  */
 
@@ -11,6 +9,9 @@
 
 #include <fcntl.h>
 #include <sys/mman.h>
+
+#include "main.h"
+
 static char *mem_image;
 static size_t mem_image_size;
 
@@ -30,12 +31,14 @@ void
 mem_image_new(size_t size)
 {
     char namebuf[256];
-    static int serialno=1;  // give the image dumps a serial no.
     int fd;
 
-    mem_image_free(); // just to be on the safe side...
+    // just to be on the safe side... I just care of leaked memory, not
+    // about incomplete images in the unlikely case of mis-use.
+    mem_image_free();
 
-    snprintf(namebuf,256,"MEM_ALLOCATION_IMAGE-%d",serialno);
+    snprintf(namebuf,sizeof(namebuf),"MEM_ALLOCATION_IMAGE-%ld.pgm",
+             time(NULL)-boot_time);
     fd = ixopen3(namebuf,O_RDWR|O_CREAT|O_EXCL|O_TRUNC|O_EXLOCK,0640);
     if (fd <0)
     {
