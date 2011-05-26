@@ -4133,7 +4133,7 @@ mem_free_unrefed_slab_memory ( const char * tag
             *p |= M_REF;
             sfree(p+M_OVERHEAD);
 #ifdef MEM_FRAGMENTATION_IMAGE
-            mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 222);
+            mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, SMALL_FREE);
 #endif
         }
         else
@@ -4143,12 +4143,13 @@ mem_free_unrefed_slab_memory ( const char * tag
 #endif /* DEBUG_MALLOC_ALLOCS */
 #ifdef MEM_FRAGMENTATION_IMAGE
             if ((*p & THIS_BLOCK) == THIS_BLOCK) // NOT allocated
-                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 222);
+                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY,
+                                       SMALL_FREE);
             else
-                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY, 32);
+                mem_image_mark_alloced(p-heap_start, slab->size / GRANULARITY,
+                                       SMALL_ALLOCED);
 #endif // MEM_FRAGMENTATION_IMAGE
         }
-
         p += slab->size / GRANULARITY;
     }
 
@@ -4207,11 +4208,18 @@ mem_free_unrefed_memory (void)
             large_free((char *)(p+ML_OVERHEAD));
             if ( !(flags2 & THIS_BLOCK) )
                 size += size2;
+#ifdef MEM_FRAGMENTATION_IMAGE
+            mem_image_mark_alloced(p-heap_start, size, LARGE_FREE);
+#endif
         }
 #ifdef MEM_FRAGMENTATION_IMAGE
         else if ((flags & THIS_BLOCK) == THIS_BLOCK)    // block is allocated.
         {
-            mem_image_mark_alloced(p-heap_start, size, 0);
+            mem_image_mark_alloced(p-heap_start, size, LARGE_ALLOCED);
+        }
+        else
+        {
+            mem_image_mark_alloced(p-heap_start, size, LARGE_FREE);
         }
 #endif
         p += size;
