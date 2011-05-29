@@ -463,6 +463,10 @@ static word_t samagic[]
 
 #endif /* MALLOC_CHECK */
 
+#ifdef MEM_FRAGMENTATION_IMAGE
+#include "mem_image.c"
+#endif
+
 /*-------------------------------------------------------------------------*/
 /* Debugging macros */
 
@@ -3915,6 +3919,9 @@ mem_free_unrefed_memory (void)
 
     /* Scan the heap for lost large blocks */
     last = heap_end - TL_OVERHEAD;
+#ifdef MEM_FRAGMENTATION_IMAGE
+    mem_image_new(last-heap_start);
+#endif
     for (p = heap_start; p < last; )
     {
         word_t size, flags;
@@ -3947,9 +3954,22 @@ mem_free_unrefed_memory (void)
             large_free((char *)(p+ML_OVERHEAD));
             if ( !(flags2 & THIS_BLOCK) )
                 size += size2;
+#ifdef MEM_FRAGMENTATION_IMAGE
+            mem_image_mark_alloced(p-heap_start, size, LARGE_FREE);
+#endif
         }
+#ifdef MEM_FRAGMENTATION_IMAGE
+        else if ((flags & THIS_BLOCK) == THIS_BLOCK)    // block is allocated.
+        {
+            mem_image_mark_alloced(p-heap_start, size, LARGE_ALLOCED);
+        }
+        else
+        {
+            mem_image_mark_alloced(p-heap_start, size, LARGE_FREE);
+        }
+#endif
         p += size;
-    }
+    }   // for
     if (success)
     {
         dprintf1(gcollect_outfd, "%d large blocks freed\n", success);
@@ -3993,13 +4013,29 @@ mem_free_unrefed_memory (void)
                 /* Recover the block */
                 *q |= M_REF;
                 sfree(q+M_OVERHEAD);
+#ifdef MEM_FRAGMENTATION_IMAGE
+                mem_image_mark_alloced(q-heap_start, size & M_MASK, SMALL_FREE);
+#endif // MEM_FRAGMENTATION_IMAGE
             }
+#ifdef MEM_FRAGMENTATION_IMAGE
+            else if ((*q & THIS_BLOCK) == THIS_BLOCK) // NOT allocated
+                mem_image_mark_alloced(q-heap_start, size & M_MASK,
+                                       SMALL_FREE);
+            else
+                mem_image_mark_alloced(q-heap_start, size & M_MASK,
+                                       SMALL_ALLOCED);
+#endif // MEM_FRAGMENTATION_IMAGE
             q += size & M_MASK;
-        }
-    }
+        } // for(q)
+        // mark p itself as used (it is used for small block management after all
+        mem_image_mark_alloced(p-heap_start, 1, SMALL_ALLOCED);
+    } // for (p)
     if (success) {
         dprintf1(gcollect_outfd, "%d small blocks freed\n", success);
     }
+#ifdef MEM_FRAGMENTATION_IMAGE
+    mem_image_free();
+#endif
 } /* mem_free_unrefed_memory() */
 
 /*-------------------------------------------------------------------------*/
