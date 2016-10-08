@@ -918,6 +918,28 @@ set_socket_own (SOCKET_T new_socket)
 } /* set_socket_own() */
 
 /*-------------------------------------------------------------------------*/
+static INLINE int
+get_socket_port(struct sockaddr *addr, socklen_t alen)
+
+/* extract the port number from the socket struct
+ */
+{
+    char sbuf[NI_MAXSERV];
+    int err = getnameinfo(addr, alen,
+                          NULL, 0,
+                          sbuf, sizeof(sbuf),
+                          NI_NUMERICSERV);
+    if (err != 0)
+    {
+        debug_message("%s Could not determine port of socket: %s\n"
+                      , time_stamp(), gai_strerror(err));
+        return 0;
+    }
+
+    return (int)strtol(sbuf, NULL, 10);
+}
+
+/*-------------------------------------------------------------------------*/
 void
 initialize_host_name (const char *hname)
 
@@ -1162,8 +1184,7 @@ initialize_host_ip_number (const char *hname, const char * haddr)
         if (!getsockname(udp_s, (struct sockaddr *)&host_ip_addr, &tmp))
         {
             int oldport = udp_port;
-
-            udp_port = ntohs(host_ip_addr.sin_port);
+            udp_port = get_socket_port(&host_ip_addr, tmp);
             if (oldport != udp_port)
                 debug_message("%s UDP recv-socket on port: %d\n"
                              , time_stamp(), udp_port);
@@ -1191,6 +1212,7 @@ urgent_data_handler (int signo)
     urgent_data = MY_TRUE;
     urgent_data_time = current_time;
 }
+
 
 /*-------------------------------------------------------------------------*/
 void
@@ -1245,28 +1267,52 @@ prepare_ipc(void)
                 exit (1);
             }
             if (bind(sos[i], (struct sockaddr *)&host_ip_addr, sizeof host_ip_addr) == -1) {
-                if (errno == EADDRINUSE) {
-                    fprintf(stderr, "%s Port %d already bound!\n"
-                                  , time_stamp(), port_numbers[i]);
-                    debug_message("%s Port %d already bound!\n"
-                                 , time_stamp(), port_numbers[i]);
-                    exit(errno);
-                } else {
+                if (errno == EADDRINUSE)
+                {
+                    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+                    int err = getnameinfo((struct sockaddr *)&host_ip_addr, 16,//alen,
+                                          hbuf, sizeof(hbuf),
+                                          sbuf, sizeof(sbuf),
+                                          NI_NUMERICSERV|NI_NUMERICHOST);
+                    if (err == 0)
+                    {
+                        fprintf(stderr, "%s Address %s Port %s already bound!\n"
+                                    , time_stamp(), hbuf, sbuf);
+                        debug_message("%s Address %s Port %s already bound!\n"
+                                      , time_stamp(), hbuf, sbuf);
+                        exit(errno);
+                    }
+                    else
+                    {
+                        fprintf(stderr, "%s Address and Port %d combination already bound %s!\n"
+                                , time_stamp(), port_numbers[i], gai_strerror(err));
+                        debug_message("%s Address and Port %d combination already bound %s!\n"
+                                      , time_stamp(), port_numbers[i], gai_strerror(err));
+                        exit(errno);
+                    }
+                }
+                else
+                {
                     perror("bind");
                     exit(1);
                 }
             }
         }
-        else {
+        else
+        {
 
             /* Existing socket */
-
             sos[i] = -port_numbers[i];
             // get and fill in the real port number associated with this
             // inherited socket descriptor.
-            tmp = sizeof(host_ip_addr);
-            if (!getsockname(sos[i], (struct sockaddr *)&host_ip_addr, &tmp))
-                port_numbers[i] = ntohs(host_ip_addr.sin_port);
+            struct sockaddr_storage ss;
+            socklen_t slen = sizeof(ss);
+            if (!getsockname(sos[i], (struct sockaddr *)&ss, &slen))
+            {
+                int p = get_socket_port((struct sockaddr *)&ss, slen);
+                if (p>0)
+                    port_numbers[i] = p;
+            }
         }
 
         /* Initialise the socket */
@@ -2684,13 +2730,13 @@ get_message (char *buff)
                 if (FD_ISSET(sos[i], &readfds))
                 {
                     SOCKET_T new_socket;
-
+                    struct sockaddr_storage addr;
                     length = sizeof addr;
                     new_socket = accept(sos[i], (struct sockaddr *)&addr
                                               , &length);
                     if ((int)new_socket != -1)
                         new_player( NULL, new_socket, &addr, (size_t)length
-                                  , -1 //TODO: fill in port_number
+                                  , get_socket_port((struct sockaddr *)&addr, length)
                                    );
                     else if ((int)new_socket == -1
                       && errno != EWOULDBLOCK && errno != EINTR
@@ -2706,12 +2752,14 @@ get_message (char *buff)
                         fprintf( stderr
                                , "%s comm: Can't accept on socket %d "
                                  "(port %d): %s\n"
-                               , time_stamp(), sos[i], -1, //TODO: port_number
+                               , time_stamp(), sos[i]
+                               , get_socket_port((struct sockaddr *)&addr, length)
                                , strerror(errorno)
                                );
                         debug_message("%s comm: Can't accept on socket %d "
                                       "(port %d): %s\n"
-                                      , time_stamp(), sos[i], -1, //TODO: port_number
+                                      , time_stamp(), sos[i]
+                                      , get_socket_port((struct sockaddr *)&addr, length)
                                      , strerror(errorno)
                                      );
                         /* TODO: Was: perror(); abort(); */
@@ -2770,7 +2818,7 @@ get_message (char *buff)
 #endif
                     push_c_string(inter_sp, ipaddr_str);
                     push_string(inter_sp, udp_data); /* adopts the ref */
-                    push_number(inter_sp, ntohs(addr.sin_port));
+                    push_number(inter_sp, get_socket_port((struct sockaddr *)&addr, length));
                     RESET_LIMITS;
                     callback_master(STR_RECEIVE_UDP, 3);
                     CLEAR_EVAL_COST;
@@ -3448,14 +3496,13 @@ refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) )
         this = *user;
         if (this)
         {
-            struct sockaddr_in addr;
-            int port;
-            length_t length;
-
-            length = sizeof(addr);
-            getsockname(this->socket, (struct sockaddr *)&addr, &length);
-            port = ntohs(addr.sin_port);
-            (*add_entry)(&this->addr, port, &this->access_class);
+            struct sockaddr_storage addr;
+            socklen_t length = sizeof(addr);
+            if (!getsockname(this->socket, (struct sockaddr *)&addr, &length))
+            {
+                int port = get_socket_port((struct sockaddr *)&addr, length);
+                (*add_entry)(&this->addr, port, &this->access_class);
+            }
         }
     }
 }
@@ -5531,6 +5578,8 @@ start_erq_demon (const char *suffix, size_t suffixlen)
                  , time_stamp(), erq_file, suffix);
 
     /* Close inherited sockets first. */
+    // TODO: what with the inherited descriptors for which we filled in the
+    // TODO::port number here?
     for (i = 0; i < numports; i++)
         if (port_numbers[i] < 0)
             set_close_on_exec(-port_numbers[i]);
@@ -8679,7 +8728,7 @@ f_interactive_info (svalue_t *sp)
         }
 
     case II_IP_PORT:
-        put_number(&result, ntohs(ip->addr.sin_port));
+        put_number(&result, get_socket_port( (struct sockaddr *)&ip->addr, ip->addr.ss_len));
         break;
 
     case II_IP_ADDRESS:
@@ -8708,11 +8757,15 @@ f_interactive_info (svalue_t *sp)
 
     case II_MUD_PORT:
         {
-            struct sockaddr_in addr;
+            struct sockaddr_storage addr;
             length_t length = sizeof(addr);
 
-            getsockname(ip->socket, (struct sockaddr *)&addr, &length);
-            put_number(&result, ntohs(addr.sin_port));
+            if (!getsockname(ip->socket, (struct sockaddr *)&addr, &length))
+            {
+                put_number(&result, get_socket_port((struct sockaddr *)&addr, length));
+            }
+            else
+                put_number(&result, 0);
             break;
         }
 

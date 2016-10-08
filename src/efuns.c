@@ -8232,7 +8232,8 @@ f_driver_info (svalue_t *sp)
             int i;
 
             memsafe(v = allocate_array(numports), sizeof(*v), "result array");
-
+            // TODO: Actually, this might not represent the correct collection of ports
+            // TODO::listening to. This should be extracted from the sockets in sos[].
             for (i = 0; i < numports; i++)
                 put_number(v->item + i, port_numbers[i]);
             put_array(&result, v);
