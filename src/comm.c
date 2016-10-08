@@ -196,10 +196,6 @@ extern int socketpair(int, int, int, int[2]);
 #    define SIGCLD SIGCHLD
 #endif
 
-#ifndef MAXHOSTNAMELEN
-#    define MAXHOSTNAMELEN 64
-#endif
-
 #ifndef INET_ADDRSTRLEN
 #    define INET_ADDRSTRLEN 16
 #endif
@@ -374,7 +370,7 @@ static SOCKET_T udp_s = -1;
 
 /* --- Networking information --- */
 
-static char host_name[MAXHOSTNAMELEN+1];
+static char host_name[_POSIX_HOST_NAME_MAX+1];
   /* This computer's hostname, used for query_host_name() efun.
    */
 
@@ -943,7 +939,7 @@ initialize_host_name (const char *hname)
     /* Get the (possibly qualified) hostname */
     if (hname != NULL)
     {
-        if (strlen(hname) > MAXHOSTNAMELEN)
+        if (strlen(hname) > sizeof host_name)
         {
             fprintf(stderr, "%s Given hostname '%s' too long.\n"
                           , time_stamp(), hname);
@@ -986,7 +982,7 @@ initialize_host_ip_number (const char *hname, const char * haddr)
     /* Get the (possibly qualified) hostname */
     if (hname != NULL)
     {
-        if (strlen(hname) > MAXHOSTNAMELEN)
+        if (strlen(hname) > sizeof host_name)
         {
             fprintf(stderr, "%s Given hostname '%s' too long.\n"
                           , time_stamp(), hname);

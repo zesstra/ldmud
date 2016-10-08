@@ -31,7 +31,6 @@
 #include <fcntl.h>
 #ifdef HAVE_NETDB_H
 #    include <netdb.h>
-     /* MAXHOSTNAMELEN on Solaris */
 #endif
 #include <locale.h>
 #include <math.h>
@@ -445,7 +444,7 @@ main (int argc, char **argv)
 
         if  (!debug_file)
         {
-            char buf[MAXHOSTNAMELEN+40];
+            char buf[_POSIX_HOST_NAME_MAX+40];
             char * name;
             struct lpc_predef_s *tmp;
 
