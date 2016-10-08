@@ -374,6 +374,11 @@ static char host_name[_POSIX_HOST_NAME_MAX+1];
   /* This computer's hostname, used for query_host_name() efun.
    */
 
+static char * host_fqdn = NULL;
+  /* This computer's fully-qualified domain name.
+   * Note: this may only be one of many names.
+   */
+
 static struct in_addr host_ip_number;
   /* This computer's numeric IP address only, used for
    * the query_host_ip_number() efun.
@@ -385,7 +390,10 @@ static struct sockaddr_in host_ip_addr_template;
    */
 
 char * domain_name = NULL;
-  /* This computer's domain name, as needed by lex.c::get_domainname().
+  /* This computer's domain name, as needed by lex.c::get_domainname()
+   * for __DOMAIN_NAME__.
+   * Note: it is tempting to make this a pointer into host_fqdn, but for
+   *       easier housekeeping it is an independent entity.
    */
 
 static int min_nfds = 0;
@@ -944,20 +952,18 @@ void
 initialize_host_name (const char *hname)
 
 /* This function is called at an early stage of the driver startup in order
- * to initialise the global host_name with a useful value (specifically so
- * that we can open the debug.log file).
+ * to initialise the global host_name and domain_name with a useful value
+ * (specifically so that we can open the debug.log file).
  * If <hname> is given, the hostname is parsed from the string, otherwise it
  * is queried from the system.
  *
- * The value set in this function will later be overwritten by the
- * call to initialize_host_ip_number().
+ * It is tried to find the canonical fully-qualified domain name for the
+ * host_name given.
  *
  * exit() on failure.
  */
 
 {
-    char *domain;
-
     /* Get the (possibly qualified) hostname */
     if (hname != NULL)
     {
@@ -978,11 +984,38 @@ initialize_host_name (const char *hname)
         }
     }
 
+    // Now find an address for this host name and its canonical fully-qualified
+    // domain name.
+    struct addrinfo hints;
+    struct addrinfo *aiHead;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_flags = AI_CANONNAME | AI_DEFAULT;
+    int err = getaddrinfo(host_name, NULL, &hints, &aiHead);
+    if (err)
+    {
+        fprintf(stderr, "%s initialize_host_name: unknown host '%s': %s\n"
+                , time_stamp(), host_name, gai_strerror(err));
+        exit(1);
+    }
+    // the canonical full-qualified hostname is in the first adddress
+    // structure returned.
+    host_fqdn = strdup(aiHead->ai_canonname);
+    char *domain = strchr(host_fqdn, '.');
+    // copy from the part after the first '.'
+    if (domain)
+        domain_name = strdup(++domain);
+    else
+        domain_name = strdup("unknown");
+    // free the addresses
+    freeaddrinfo(aiHead);
+
     /* Cut off the domain name part of the hostname, if any.
      */
     domain = strchr(host_name, '.');
     if (domain)
         *domain = '\0';
+
 } /* initialize_host_name() */
 
 /*-------------------------------------------------------------------------*/

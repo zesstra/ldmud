@@ -423,7 +423,9 @@ main (int argc, char **argv)
               );
 
         /* Setup comm::host_name, so that we can open the debug.log file
-         * with the proper name. We do the complete setup later.
+         * with the proper name. This also sets up the default domain name.
+         * Note: Please keep in mind, that both - host_name and domain_name -
+         * may be only one of multiple, that system has.
          */
         initialize_host_name(hostname);
 
