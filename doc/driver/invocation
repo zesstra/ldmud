@@ -25,8 +25,11 @@ DESCRIPTION
             driver [options] [<portnumber>]...
 
         <portnumber> the number of the port the driver shall use to accept
-        connections. The maximum number of ports is determined by MAXNUMPORTS
-        in the source file config.h.
+        connections. You can specify multiple ports. The maximum number of
+        listening sockets opened by the driver is however limited to
+        MAXNUMSOCKETS in the source file config.h. (a single port used may
+        result in multiple sockets used depending on the number of IP
+        addresses and interfaces the machine has).
 
         The options modify the behaviour of the gamedriver. Some of them are
         only available if a certain compile-time option was enabled (typically
@@ -35,7 +38,7 @@ DESCRIPTION
           -P|--inherit <fd-number>
             Inherit filedescriptor <fd-number> from the parent process
             as socket to listen for connections.
-            Only available if compiled with MAXNUMPORTS.
+            Only available if compiled with MAXNUMSOCKETS.
 
           -u|--udp <portnumber>
             Specify the <portnumber> for the UDP port, overriding the

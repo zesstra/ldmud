@@ -156,8 +156,9 @@ Bool synch_heart_beats      = MY_FALSE;
 Bool heart_beats_enabled    = MY_TRUE;
   /* heart beats are currently active and will be called. */
 
-int port_numbers[MAXNUMPORTS] = { PORTNO };
+int port_numbers[MAXNUMSOCKETS] = { PORTNO };
   /* The login port numbers.
+   * We don't accept more ports than available socket slots.
    * Negative numbers are not ports, but the numbers of inherited
    * socket file descriptors.
    */
@@ -1841,7 +1842,7 @@ options (void)
 #endif
        , stdout);
 
-  printf(" Multiple ports: %d ports max, default is %d.\n", MAXNUMPORTS, PORTNO);
+  printf(" Multiple ports: default port is %d, (max. %d sockets),\n", PORTNO, MAXNUMSOCKETS);
 
   printf("            UDP: default port is %d.\n", UDP_PORT);
 
@@ -2328,7 +2329,7 @@ eval_arg (int eOption, const char * pValue)
     switch (eOption)
     {
     case cArgument:
-        if (numports >= MAXNUMPORTS)
+        if (numports >= MAXNUMSOCKETS)
             fprintf(stderr, "Portnumber '%s' ignored.\n", pValue);
         else if (atoi(pValue))
               port_numbers[numports++] = atoi(pValue);
@@ -2340,7 +2341,7 @@ eval_arg (int eOption, const char * pValue)
         return hrArgFile;
 
     case cInherited:
-        if (numports >= MAXNUMPORTS)
+        if (numports >= MAXNUMSOCKETS)
             fprintf(stderr, "fd '%s' ignored.\n", pValue);
         else if (atoi(pValue))
               port_numbers[numports++] = -atoi(pValue);

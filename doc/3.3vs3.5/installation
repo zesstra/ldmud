@@ -12,3 +12,8 @@ complete list of them:
   The ptmalloc memory allocator was removed. Please use one of the others. For
   more information, please see Issue #552 in our bug tracker.
 
+- the configure parameters --with-maxnumports was renamed to
+  --with-maxnumsockets and defines now the maximum number of TCP listening
+  sockets the driver uses. This reflects the fact, that one port number may
+  result in multiple listening sockets created.
+

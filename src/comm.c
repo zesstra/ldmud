@@ -361,7 +361,7 @@ static int ipcur = 0;
 
 /* --- Communication sockets --- */
 
-static SOCKET_T sos[MAXNUMPORTS];
+static SOCKET_T sos[MAXNUMSOCKETS];
   /* The login sockets.
    */
 
@@ -1262,6 +1262,8 @@ prepare_ipc(void)
             /* Existing socket */
 
             sos[i] = -port_numbers[i];
+            // get and fill in the real port number associated with this
+            // inherited socket descriptor.
             tmp = sizeof(host_ip_addr);
             if (!getsockname(sos[i], (struct sockaddr *)&host_ip_addr, &tmp))
                 port_numbers[i] = ntohs(host_ip_addr.sin_port);
@@ -2688,7 +2690,8 @@ get_message (char *buff)
                                               , &length);
                     if ((int)new_socket != -1)
                         new_player( NULL, new_socket, &addr, (size_t)length
-                                  , port_numbers[i]);
+                                  , -1 //TODO: fill in port_number
+                                   );
                     else if ((int)new_socket == -1
                       && errno != EWOULDBLOCK && errno != EINTR
                       && errno != EAGAIN && errno != EPROTO )
@@ -2703,12 +2706,12 @@ get_message (char *buff)
                         fprintf( stderr
                                , "%s comm: Can't accept on socket %d "
                                  "(port %d): %s\n"
-                               , time_stamp(), sos[i], port_numbers[i]
+                               , time_stamp(), sos[i], -1, //TODO: port_number
                                , strerror(errorno)
                                );
                         debug_message("%s comm: Can't accept on socket %d "
                                       "(port %d): %s\n"
-                                     , time_stamp(), sos[i], port_numbers[i]
+                                      , time_stamp(), sos[i], -1, //TODO: port_number
                                      , strerror(errorno)
                                      );
                         /* TODO: Was: perror(); abort(); */

@@ -201,7 +201,7 @@ with_udp_port=4246
 
 # The maximum number of ports to listen for connections on.
 
-with_maxnumports=20
+with_maxnumsockets=20
 
 # Select the ERQ service to use.
 #   'no':   the driver is compiled without erq support.

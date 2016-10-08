@@ -33,7 +33,7 @@ with_portno=23
 with_udp_port=7780
 
 # we have only 2 ports at max
-with_maxnumports=2
+with_maxnumsockets=2
 
 # we use the extended erq
 enable_erq=xerq

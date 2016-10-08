@@ -76,7 +76,7 @@
 --with-max-bits=6144 \
 --with-portno=4711 \
 --with-udp-port=4246 \
---with-maxnumports=3 \
+--with-maxnumsockets=3 \
 --with-max-cost=1000000 \
 --with-catch-reserved-cost=2000 \
 --with-master-reserved-cost=0x200 \

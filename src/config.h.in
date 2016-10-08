@@ -192,7 +192,7 @@
 
 /* Maximum numbers of ports the GD accepts connections to.
  */
-#define MAXNUMPORTS          @val_maxnumports@
+#define MAXNUMSOCKETS        @val_maxnumsockets@
 
 /* Should code for the external request demon be included?
  */

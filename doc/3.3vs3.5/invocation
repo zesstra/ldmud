@@ -6,3 +6,8 @@ Some command-line flags were renamed to match the LPC defines they define
 *  --async-heart    -> --asynchronous-heart-beat
 *  --no-heart       -> --no-timers
 
+For each port number more than one listening sockets may be opened (depending
+on the number of interfaces and IP adresses the system has). However, the
+maximum number of listening sockets is MAXNUMSOCKETS (from config.h). Once all
+available slots are used, any remaining ports will be ignored.
+

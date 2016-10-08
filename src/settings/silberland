@@ -19,7 +19,7 @@ with_time_to_reset=3600
 with_max_bits=1200
 
 with_portno=4711
-with_maxnumports=3
+with_maxnumsockets=3
 
 with_max_local=25
 

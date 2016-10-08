@@ -17,7 +17,7 @@ with_time_to_swap_variables=10800
 with_time_to_reset=2700
 
 with_portno=4711
-with_maxnumports=1
+with_maxnumsockets=1
 with_udp_port=4246
 
 with_max_local=20
