@@ -371,7 +371,8 @@ static SOCKET_T udp_s = -1;
 /* --- Networking information --- */
 
 static char host_name[_POSIX_HOST_NAME_MAX+1];
-  /* This computer's hostname, used for query_host_name() efun.
+  /* This computer's hostname, used for __HOST_NAME__ define.
+   * Note: this may only be one of many names.
    */
 
 static char * host_fqdn = NULL;
@@ -381,7 +382,8 @@ static char * host_fqdn = NULL;
 
 static struct in_addr host_ip_number;
   /* This computer's numeric IP address only, used for
-   * the query_host_ip_number() efun.
+   * the __HOST_IP_NUMBER__ define.
+   * Note: this may only be one of many addresses.
    */
 
 static struct sockaddr_in host_ip_addr_template;
