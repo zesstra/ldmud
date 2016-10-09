@@ -393,7 +393,7 @@ extern statcounter_t inet_volume_in;
 /* --- Prototypes --- */
 
 extern void initialize_host_name (const char *hname);
-extern void initialize_host_ip_number(const char *, const char *);
+extern void initialize_host_ip_addr(const char *haddr);
 extern void  prepare_ipc(void);
 extern void  ipc_remove(void);
 extern Bool comm_socket_write (char *msg, size_t size, interactive_t *ip, uint32 flags);

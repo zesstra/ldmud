@@ -376,7 +376,8 @@ static char host_name[_POSIX_HOST_NAME_MAX+1];
    */
 
 static char * host_fqdn = NULL;
-  /* This computer's fully-qualified domain name.
+  /* This computer's fully-qualified domain name. It is used to find a
+   * current IP address of this machine.
    * Note: this may only be one of many names.
    */
 
@@ -397,6 +398,12 @@ char * domain_name = NULL;
    * Note: it is tempting to make this a pointer into host_fqdn, but for
    *       easier housekeeping it is an independent entity.
    */
+
+static char * host_address = NULL;
+/* This computer's address to be used for listening sockets (optional)
+ * If NULL, a wildcard address is used to listen on all address.
+ * The address must be parseable by inet_pton() and getaddrinfo().
+ */
 
 static int min_nfds = 0;
   /* The number of fds used by the driver's sockets (udp, erq, login).
@@ -954,8 +961,8 @@ void
 initialize_host_name (const char *hname)
 
 /* This function is called at an early stage of the driver startup in order
- * to initialise the global host_name and domain_name with a useful value
- * (specifically so that we can open the debug.log file).
+ * to initialise the global host_name, host_fqdn and domain_name with useful
+ * values (specifically so that we can open the debug.log file).
  * If <hname> is given, the hostname is parsed from the string, otherwise it
  * is queried from the system.
  *
@@ -1021,216 +1028,171 @@ initialize_host_name (const char *hname)
 } /* initialize_host_name() */
 
 /*-------------------------------------------------------------------------*/
-void
-initialize_host_ip_number (const char *hname, const char * haddr)
-
-/* Initialise the globals host_ip_number and host_ip_addr_template.
- * If <hname> or <haddr> are given, the hostname/hostaddr are parsed
- * from the strings, otherwise they are queried from the system.
+static int
+init_udp_socket(int port)
+/* Try to open the specified UDP port and set udp_s on success.
  *
- * Open the UDP port if requested so that it can be used in inaugurate_master().
- * exit() on failure.
+ * Returns the real port the udp_s listens or -1 when the port is already bound.
+ * Aborts the driver in case of other errors.
  */
-
 {
-    char *domain;
-    length_t tmp;
+    if (udp_s > -1)
+        close(udp_s);
+    udp_s = -1;
 
-    /* Get the (possibly qualified) hostname */
-    if (hname != NULL)
-    {
-        if (strlen(hname) > sizeof host_name)
-        {
-            fprintf(stderr, "%s Given hostname '%s' too long.\n"
-                          , time_stamp(), hname);
-            exit(1);
-        }
-        else
-            strcpy(host_name, hname);
-    }
-    else
-    {
-        if (gethostname(host_name, sizeof host_name) == -1) {
-            herror("gethostname");
-            exit(1);
-        }
-    }
-
-    /* Get the host address */
-    memset(&host_ip_addr_template, 0, sizeof host_ip_addr_template);
-    if (haddr != NULL)
-    {
-#ifndef USE_IPV6
-        host_ip_number.s_addr = inet_addr(haddr);
-        host_ip_addr_template.sin_family = AF_INET;
-        host_ip_addr_template.sin_addr = host_ip_number;
-#else
-        host_ip_number = inet6_addr(haddr);
-        host_ip_addr_template.sin_family = AF_INET6;
-        host_ip_addr_template.sin_addr = host_ip_number;
-#endif
-
-        /* Find the domain part of the hostname */
-        domain = strchr(host_name, '.');
-    }
-    else
-    {
-        struct hostent *hp;
-
-#ifndef USE_IPV6
-        hp = gethostbyname(host_name);
-        if (!hp) {
-            fprintf(stderr, "%s gethostbyname: unknown host '%s'.\n"
-                          , time_stamp(), host_name);
-            exit(1);
-        }
-        memcpy(&host_ip_addr_template.sin_addr, hp->h_addr, (size_t)hp->h_length);
-        host_ip_addr_template.sin_family = (unsigned short)hp->h_addrtype;
-#else
-        hp = gethostbyname2(host_name, AF_INET6);
-        if (!hp)
-            hp = gethostbyname2(host_name, AF_INET);
-        if (!hp)
-        {
-            fprintf(stderr, "%s gethostbyname2: unknown host '%s'.\n"
-                          , time_stamp(), host_name);
-            exit(1);
-        }
-        memcpy(&host_ip_addr_template.sin_addr, hp->h_addr, (size_t)hp->h_length);
-
-        if (hp->h_addrtype == AF_INET)
-        {
-            CREATE_IPV6_MAPPED(&host_ip_addr_template.sin_addr, *(u_int32_t*)hp->h_addr_list[0]);
-        }
-        host_ip_addr_template.sin_family = AF_INET6;
-#endif
-
-        host_ip_number = host_ip_addr_template.sin_addr;
-
-        /* Now set the template to the proper _ANY value */
-        memset(&host_ip_addr_template.sin_addr, 0, sizeof(host_ip_addr_template.sin_addr));
-#ifndef USE_IPV6
-        host_ip_addr_template.sin_addr.s_addr = INADDR_ANY;
-        host_ip_addr_template.sin_family = AF_INET;
-#else
-        host_ip_addr_template.sin_addr = in6addr_any;
-        host_ip_addr_template.sin_family = AF_INET6;
-#endif
-
-        /* Find the domain part of the hostname */
-        if (hname == NULL)
-            domain = strchr(hp->h_name, '.');
-        else
-            domain = strchr(host_name, '.');
-    }
-
-#ifndef USE_IPV6
-    printf("%s Hostname '%s' address '%s'\n"
-          , time_stamp(), host_name, inet_ntoa(host_ip_number));
-    debug_message("%s Hostname '%s' address '%s'\n"
-                 , time_stamp(), host_name, inet_ntoa(host_ip_number));
-#else
-    printf("%s Hostname '%s' address '%s'\n"
-          , time_stamp(), host_name, inet6_ntoa(host_ip_number));
-    debug_message("%s Hostname '%s' address '%s'\n"
-                 , time_stamp(), host_name, inet6_ntoa(host_ip_number));
-#endif
-
-    /* Put the domain name part of the hostname into domain_name, then
-     * strip it off the host_name[] (as only query_host_name() is going
-     * to need it).
-     * Note that domain might not point into host_name[] here, so we
-     * can't just stomp '\0' in there.
+    /* Open UDP socket
+     * We try first to open a IPv6 socket and try to use the IPv4-mapped-IPv6
+     * address. The rationale it, that we want to have only one socket and
+     * if possible that should be able to receive IPv4 and IPv6 traffic.
+     * And once we bound the native IPv4 address, we can't bind to the
+     * IPv4-mapped-IPv6 address.
      */
-    if (domain)
+    if (port > -1)
     {
-        domain_name = strdup(domain+1);
-    }
-    else
-        domain_name = strdup("unknown");
-
-    domain = strchr(host_name, '.');
-    if (domain)
-        *domain = '\0';
-
-    /* Initialize udp at an early stage so that the master object can use
-     * it in inaugurate_master() , and the port number is known.
-     */
-    if (udp_port != -1)
-    {
-        struct sockaddr_in host_ip_addr;
-
-        memcpy(&host_ip_addr, &host_ip_addr_template, sizeof(host_ip_addr));
-
-        host_ip_addr.sin_port = htons((u_short)udp_port);
+        struct addrinfo hints;
+        struct addrinfo *aiHead, *ai;
+        char sbuf[NI_MAXSERV];
+        snprintf(sbuf, sizeof(sbuf), "%d", port);
         debug_message("%s UDP recv-socket requested for port: %d\n"
-                     , time_stamp(), udp_port);
-        udp_s = socket(host_ip_addr.sin_family, SOCK_DGRAM, 0);
-        if (udp_s == -1)
+                      , time_stamp(), port);
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = PF_INET6;
+        hints.ai_flags =  AI_DEFAULT | AI_PASSIVE | AI_NUMERICSERV;
+        hints.ai_socktype = SOCK_DGRAM;
+        hints.ai_protocol = IPPROTO_UDP;
+        int err = getaddrinfo(host_address, sbuf, &hints, &aiHead);
+        if (err)
         {
-            perror("socket(udp_socket)");
-            exit(1);
-        }
-        tmp = 1;
-        if (setsockopt (udp_s, SOL_SOCKET, SO_REUSEADDR,
-                        (char *) &tmp, sizeof (tmp)) < 0)
-        {
-            perror ("setsockopt(udp_s, SO_REUSEADDR)");
-            exit(1);
-        }
-
-        /* Bind the UDP socket to an address.
-         * First, try the given port number, if that one is in use
-         * already, let bind() select one. If that one is in use, too,
-         * close the socket again and pretend that we never had one.
-         * Other errors abort the driver.
-         */
-        for(;;) {
-            if (-1 == bind(udp_s, (struct sockaddr *)&host_ip_addr
-                          , sizeof(host_ip_addr)))
+            // then try to find any address, including native IPv4.
+            hints.ai_family = PF_UNSPEC;
+            err = getaddrinfo(host_address, sbuf, &hints, &aiHead);
+            if (err)
             {
-                if (errno == EADDRINUSE) {
+                // if still not a single address can be found, we give up.
+                fprintf(stderr, "%s initialize_host_name: unknown host '%s': %s\n"
+                        , time_stamp(), host_name, gai_strerror(err));
+                exit(1);
+            }
+        }
+        // iterate through all received address structures until a socket
+        // could be bound.
+        for ( ai = aiHead; ai != NULL ; ai = ai->ai_next )
+        {
+            udp_s = socket(ai->ai_family,
+                           ai->ai_socktype,
+                           ai->ai_protocol);
+            if (udp_s == -1)
+            {
+                perror("socket (udp_socket)");
+                exit(1);
+            }
+            char tmp = 1;
+            if (setsockopt (udp_s, SOL_SOCKET, SO_REUSEADDR,
+                            (char *) &tmp, sizeof (tmp)) < 0)
+            {
+                perror ("setsockopt(udp_s, SO_REUSEADDR)");
+                exit(1);
+            }
+            // Now bind it.
+            if (bind(udp_s, ai->ai_addr, ai->ai_addrlen) == 0)
+            {
+                break;  // found one, finished with the for loop!
+            }
+            else
+            {
+                if (errno == EADDRINUSE)
+                {
+                    // in this case we just try again
                     fprintf(stderr, "%s UDP port %d already bound!\n"
-                                  , time_stamp(), udp_port);
+                            , time_stamp(), port);
                     debug_message("%s UDP port %d already bound!\n"
-                                  , time_stamp(), udp_port);
-                    if (host_ip_addr.sin_port) {
-                        host_ip_addr.sin_port = 0;
-                        continue;
-                    }
-                    close(udp_s);
-                    udp_s = -1;
-                } else {
-                    perror("udp-bind");
+                                  , time_stamp(), port);
+                }
+                else
+                {
+                    // exit on other errors.
+                    perror("Error binding UDP port: ");
                     exit(1);
                 }
+                // port could not be bound...
+                close(udp_s);
+                udp_s=-1;
             }
-            break;
         }
+        // don't need the address structures anymore.
+        freeaddrinfo(aiHead);
     }
-
     /* If we got the UDP socket, get query it's real address and
      * initialise it.
      */
-    if (udp_s >= 0) {
-        struct sockaddr_in host_ip_addr;
-
-        tmp = sizeof(host_ip_addr);
-        if (!getsockname(udp_s, (struct sockaddr *)&host_ip_addr, &tmp))
-        {
-            int oldport = udp_port;
-            udp_port = get_socket_port(&host_ip_addr, tmp);
-            if (oldport != udp_port)
-                debug_message("%s UDP recv-socket on port: %d\n"
-                             , time_stamp(), udp_port);
-        }
+    if (udp_s >= 0)
+    {
         set_socket_nonblocking(udp_s);
         set_close_on_exec(udp_s);
         if (socket_number(udp_s) >= min_nfds)
             min_nfds = socket_number(udp_s)+1;
+        struct sockaddr_storage host_ip_addr;
+        socklen_t tmp = sizeof(host_ip_addr);
+        if (!getsockname(udp_s, (struct sockaddr *)&host_ip_addr, &tmp))
+        {
+            port = get_socket_port((struct sockaddr *)&host_ip_addr, tmp);
+            debug_message("%s UDP recv-socket on port: %d\n"
+                          , time_stamp(), udp_port);
+        }
+        return port;
+    }
+    return -1;
+}
+
+/*-------------------------------------------------------------------------*/
+void
+initialize_host_ip_addr (const char * haddr)
+
+/* Stores <haddr> as the address to be used for listening sockets (if given).
+ * If not given, the driver will listen on all addresses the system knows.
+ * Note: it is NOT recommended to specify an address, because it prevents
+ *       the driver to adapt to address changes while it runs.
+ *
+ * Open the UDP port if requested so that it can be used in inaugurate_master().
+ * exit() on failure.
+ * The TCP listening sockets will be initialized in prepare_ipc().
+ *
+ */
+
+{
+    // Store the address if given. (We might check for validity first, but
+    // if it is not valid, there will be an error when opening the UDP socket.)
+    if (haddr)
+    {
+        host_address = strdup(haddr);
+        printf("%s Hostname '%s' address '%s'\n"
+               , time_stamp(), host_name, host_address);
+        debug_message("%s Hostname '%s' address '%s'\n"
+                      , time_stamp(), host_name, host_address);
+    }
+    else
+    {
+        printf("%s Hostname '%s' listening to all addresses\n"
+               , time_stamp(), host_name);
+        debug_message("%s Hostname '%s' listening to all addresses\n"
+                      , time_stamp(), host_name);
     }
 
-} /* initialize_host_ip_number() */
+    // Open UDP socket
+    if (udp_port != -1)
+    {
+        udp_s = init_udp_socket(udp_port);
+        // if we still have no UDP socket, don't use UDP
+        if (udp_s == -1)
+        {
+            fprintf(stderr, "%s UDP port %d could not be bound, disabling UDP!\n"
+                    , time_stamp(), udp_port);
+            debug_message("%s UDP port %d could not be bound, disabling UDP!\n"
+                          , time_stamp(), udp_port);
+            udp_port = -1;
+        }
+    }
+} /* initialize_host_ip_addr() */
 
 
 /*-------------------------------------------------------------------------*/

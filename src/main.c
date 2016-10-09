@@ -428,6 +428,11 @@ main (int argc, char **argv)
          * may be only one of multiple, that system has.
          */
         initialize_host_name(hostname);
+        if (hostname)
+        {
+            free(hostname);
+            hostname = NULL;
+        }
 
         /* Change to the mudlib dir early so that the debug.log file
          * is opened in the right place.
@@ -602,9 +607,12 @@ main (int argc, char **argv)
         if (!no_erq_demon)
             start_erq_demon("", 0);
 #endif /* ERQ_DEMON */
-        initialize_host_ip_number(hostname, hostaddr);
-        free(hostname); hostname = NULL;
-        free(hostaddr); hostaddr = NULL;
+        initialize_host_ip_addr(hostaddr);
+        if (hostaddr)
+        {
+            free(hostaddr);
+            hostaddr = NULL;
+        }
 
         initialize_host_access();
         
