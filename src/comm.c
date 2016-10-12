@@ -361,6 +361,13 @@ static int ipcur = 0;
 
 /* --- Communication sockets --- */
 
+struct cached_ip {
+    mp_int time;            // value of current_time when IP was resolved
+    struct sockaddr_storage addr;
+    socklen_t addrlen;      // length of socket-address */
+    string_t *name;         // tabled string with the hostname for addr
+};
+
 static SOCKET_T sos[MAXNUMSOCKETS];
   /* The login sockets.
    */
@@ -375,22 +382,16 @@ static char host_name[_POSIX_HOST_NAME_MAX+1];
    * Note: this may only be one of many names.
    */
 
-static char * host_fqdn = NULL;
+static string_t * host_fqdn = NULL;
   /* This computer's fully-qualified domain name. It is used to find a
    * current IP address of this machine.
    * Note: this may only be one of many names.
    */
 
-static struct in_addr host_ip_number;
-  /* This computer's numeric IP address only, used for
-   * the __HOST_IP_NUMBER__ define.
-   * Note: this may only be one of many addresses.
-   */
-
-static struct sockaddr_in host_ip_addr_template;
-  /* The template address of this computer. It is copied locally
-   * and augmented with varying port numbers to open the driver's ports.
-   */
+static struct cached_ip host_ip = NULL;
+/* The IP we got, when we last resolved our own FQDN and the timestamp
+ * at that time.
+ */
 
 char * domain_name = NULL;
   /* This computer's domain name, as needed by lex.c::get_domainname()
@@ -1007,9 +1008,14 @@ initialize_host_name (const char *hname)
                 , time_stamp(), host_name, gai_strerror(err));
         exit(1);
     }
-    // the canonical full-qualified hostname is in the first adddress
-    // structure returned.
-    host_fqdn = strdup(aiHead->ai_canonname);
+    // the canonical fully-qualified hostname is in the first adddress
+    // structure returned. We also cache the IP address we got as one of ours.
+    host_fqdn = new_tabled(aiHead->ai_canonname);
+    host_ip.current_time = get_current_time();
+    host_ip.name = ref_mstring(host_fqdn);
+    host_ip.addrlen = aiHead->ai_addrlen;
+    memcpy(&host_ip.addr, &aiHead->ai_addr, aiHead->ai_addrlen);
+
     char *domain = strchr(host_fqdn, '.');
     // copy from the part after the first '.'
     if (domain)
@@ -6250,7 +6256,8 @@ clear_comm_refs (void)
                 clear_object_ref(outconn[i].curr_obj);
         }
     }
-
+    // host_fqdn and host_ip.name will be cleared by mstrings.c because they
+    // are in the string table.
 #ifdef ERQ_DEMON
     for (i = sizeof (pending_erq) / sizeof (*pending_erq); --i >= 0;)
     {
@@ -6282,6 +6289,10 @@ count_comm_refs (void)
             }
         }
     }
+    if (host_fqdn)
+        count_ref_from_string(host_fqdn);
+    if (host_ip.name)
+        count_ref_from_string(host_ip.name);
 
 #ifdef ERQ_DEMON
     for(i = 0; i < IPSIZE; i++) {
@@ -6365,26 +6376,56 @@ query_host_name (void)
 } /* query_host_name() */
 
 /*-------------------------------------------------------------------------*/
-char *
+const char *
 get_host_ip_number (void)
 
 /* Return the IP address of the host.
- * The result is a newly allocated string.
- * Called by lex.c .
+ * The result is a pointer to a local static buffer.
+ * Called by lex.c.
+ * This is more complicated than you would expect, because our IP addresses
+ * may change at runtime and the only portable way seems to be to resolve
+ * our name.
  */
 
 {
-#ifndef USE_IPV6
-    char buf[INET_ADDRSTRLEN+3];
+    static char l_result[NI_MAXHOST+2] = {0};
 
-    sprintf(buf, "\"%s\"", inet_ntoa(host_ip_number));
-#else
-    char buf[INET6_ADDRSTRLEN+3];
+    // if host_ip is not current, we have to update it. (otherwise, we just
+    // return the last result again).
+    if (host_ip.time < current_time - 3600)
+    {
+        // resolve our name...
+        struct addrinfo hints;
+        struct addrinfo *aiHead;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = PF_UNSPEC;
+        hints.ai_flags = AI_DEFAULT;
+        if (!getaddrinfo(get_txt(host_fqdn), NULL, &hints, &aiHead))
+        {
+            host_ip.time = current_time;
+            free_mstring(host_ip.name);
+            host_ip.name = new_tabled(aiHead->ai_canonname);
+            host_ip.addrlen = aiHead->ai_addrlen;
+            memcpy(&host_ip.addr, &aiHead->ai_addr, aiHead->addrlen);
+            freeaddrinfo(aiHead);
+            aiHead=NULL;
+        }
+        // if the getaddrinfo does not succeed, we use the old value anyway
+        char hbuf[NI_MAXHOST];
+        if (!getnameinfo(host_ip.addr, host_ip.addrlen,
+                         hbuf, sizeof(hbuf),
+                         NULL, 0,
+                         NI_NUMERICHOST))
+        {
+            snprintf(l_result, sizeof l_result, "\"%s\"", hbuf);
+        }
+        else if (l_result[0] == '\0')
+            snprintf(l_result, sizeof l_result, "\"%s\"", "127.0.0.1");
+    }
 
-    sprintf(buf, "\"%s\"", inet6_ntoa(host_ip_number));
-#endif
-    return string_copy(buf);
-} /* query_host_ip_number() */
+    return l_result;
+
+} /* get_host_ip_number() */
 
 /*-------------------------------------------------------------------------*/
 svalue_t *
