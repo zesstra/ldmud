@@ -820,7 +820,9 @@ comm_fatal (interactive_t *ip, char *fmt, ...)
     fprintf(stderr, "  .prev_for_flush:    %p", ip->previous_player_for_flush);
       if (ip->previous_player_for_flush) fprintf(stderr, " (%s)", get_txt(ip->previous_player_for_flush->ob->name));
       putc('\n', stderr);
+#ifdef ACCESS_FILE
     fprintf(stderr, "  .access_class:      %ld\n", ip->access_class);
+#endif
     fprintf(stderr, "  .charset:          ");
       dump_bytes(&(ip->charset), sizeof(ip->charset), 21);
     fprintf(stderr, "  .combine_cset:     ");
@@ -3423,8 +3425,9 @@ remove_interactive (object_t *ob, Bool force)
         shutdown(interactive->socket, 2);
         socket_close(interactive->socket);
     } /* if (erq or user) */
-
+#ifdef ACCESS_FILE
     release_host_access(interactive->access_class);
+#endif
       /* One user less in this class */
 
     num_player--;
@@ -3490,6 +3493,7 @@ refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) )
  */
 
 {
+#ifdef ACCESS_FILE
     interactive_t **user, *this;
     int n;
 
@@ -3508,6 +3512,7 @@ refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) )
             }
         }
     }
+#endif
 }
 
 /*-------------------------------------------------------------------------*/
@@ -3571,16 +3576,17 @@ new_player ( object_t *ob, SOCKET_T new_socket
     svalue_t *ret;       /* LPC call results */
     interactive_t *new_interactive;
                          /* The new interactive structure */
-    long class;     /* Access class */
 
     /* Set some useful socket options */
     set_socket_nonblocking(new_socket);
     set_close_on_exec(new_socket);
     set_socket_own(new_socket);
     set_socket_nosigpipe(new_socket);
-    
+
     /* Check for access restrictions for this connection */
-    message = allow_host_access(addr, login_port, &class);
+#ifdef ACCESS_FILE
+    long class;     /* Access class */
+    char *message = allow_host_access(addr, login_port, &class);
 
     if (access_log != NULL)
     {
@@ -3607,7 +3613,7 @@ new_player ( object_t *ob, SOCKET_T new_socket
         socket_close(new_socket);
         return;
     }
-
+#endif // ACCESS_FILE
     if (d_flag)
         debug_message("%s New player at socket %d.\n"
                      , time_stamp(), new_socket);
@@ -3721,7 +3727,9 @@ new_player ( object_t *ob, SOCKET_T new_socket
     set_default_combine_charset(new_interactive->combine_cset);
     new_interactive->text[0] = '\0';
     memcpy(&new_interactive->addr, addr, addrlen);
+#ifdef ACCESS_FILE
     new_interactive->access_class = class;
+#endif
     new_interactive->socket = new_socket;
     new_interactive->next_player_for_flush = NULL;
     new_interactive->previous_player_for_flush = NULL;

@@ -235,10 +235,11 @@ struct interactive_s {
       /* Double linked list of all active user objects with data pending
        * in message_buf[].
        */
-
+#if ACCESS_FILE
     long access_class;
       /* represents a "cluster" where this player comes from
        */
+#endif
     char charset[32];
       /* A bitflag array: every non-zero flag allows the corresponding
        * character to be sent. Characters whose flag is 0 are excluded
@@ -452,7 +453,8 @@ extern svalue_t *v_snoop(svalue_t *sp, int num_arg);
 extern svalue_t *f_users(svalue_t *sp);
 extern svalue_t *f_net_connect (svalue_t *sp);
 extern svalue_t *f_configure_interactive(svalue_t *sp);
-
-extern void refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) );
+#ifdef ACCESS_FILE
+extern void refresh_access_data(void (*add_entry)(struct sockaddr *, socklen_t, int, long*) );
+#endif
 
 #endif /* COMM_H__ */

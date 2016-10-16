@@ -88,6 +88,7 @@
  * TODO:: and #'function(ip-address, port).
  *---------------------------------------------------------------------------
  */
+#ifdef ACCESS_FILE
 
 #include "driver.h"
 
@@ -515,4 +516,4 @@ initialize_host_access ()
 }
 
 /***************************************************************************/
-
+#endif //ACCESS_FILE

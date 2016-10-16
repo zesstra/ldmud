@@ -308,9 +308,9 @@ main (int argc, char **argv)
     
 #ifdef ACCESS_FILE
     access_file = strdup(ACCESS_FILE);
-#endif
-#ifdef ACCESS_LOG
+#   ifdef ACCESS_LOG
     access_log = strdup(ACCESS_LOG);
+#   endif
 #endif
 #ifdef USE_TLS
 #  ifdef TLS_DEFAULT_KEYFILE
@@ -613,9 +613,9 @@ main (int argc, char **argv)
             free(hostaddr);
             hostaddr = NULL;
         }
-
+#ifdef ACCESS_FILE
         initialize_host_access();
-        
+#endif
         install_signal_handlers();
         
         (void)signal(SIGFPE, SIG_IGN);
@@ -2646,25 +2646,27 @@ eval_arg (int eOption, const char * pValue)
             free(hostaddr);
         hostaddr = strdup(pValue);
         break;
-
     case cAccessFile:
+#ifdef ACCESS_FILE
         if (access_file != NULL)
             free(access_file);
         if (!strcmp(pValue, "none"))
             access_file = NULL;
         else
             access_file = strdup(pValue);
+#endif // ACCESS_FILE
         break;
 
     case cAccessLogFile:
+#ifdef ACCESS_FILE
         if (access_log != NULL)
             free(access_log);
         if (!strcmp(pValue, "none"))
             access_log = NULL;
         else
             access_log = strdup(pValue);
+#endif // ACCESS_FILE
         break;
-
     case cMaster:
         if (strlen(pValue) >= sizeof(master_name)) {
             fprintf(stderr, "Too long master name '%s'\n", pValue);

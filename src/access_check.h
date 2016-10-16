@@ -1,3 +1,5 @@
+#ifdef ACCESS_FILE
+
 #ifndef ACCESS_CHECK_H__
 #define ACCESS_CHECK_H__ 1
 
@@ -15,3 +17,4 @@ extern void initialize_host_access();
 
 #endif /* ACCESS_CHECK_H__ */
 
+#endif
