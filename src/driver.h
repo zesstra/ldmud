@@ -133,9 +133,9 @@
 
 /* Define some macros needed in the headers included from ../mudlib/sys */
 
-#ifdef USE_IPV6
-#    define __IPV6__
-#endif
+// we require basic IPv6 support
+#define __IPV6__
+
 
 /* If USE_PCRE is defined, check if the libpcre is available on this system.
  * Disable USE_PCRE if not. */

@@ -203,10 +203,6 @@
 #define ERQ_MAX_REPLY @val_erq_max_reply@
 #define ERQ_MAX_SEND  @val_erq_max_send@
 
-/* Define this if you want IPv6 support (assuming that your host
- * actually offers this.
- */
-@cdef_use_ipv6@ USE_IPV6
 
 /* maximum number of concurrent outgoing connection attempts by net_connect()
  * (that is connections that are in progress but not fully established yet).

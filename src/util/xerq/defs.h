@@ -11,9 +11,7 @@
 #  define ERQ_DEBUG 0
 #endif
 
-#ifdef USE_IPV6
-#    define __IPV6__
-#endif
+define __IPV6__
 
 #include "erq.h"
 
@@ -234,9 +232,7 @@ extern void erq_open_tcp(char *, int);
 extern void erq_listen(char *, int);
 extern void erq_accept(char *, int);
 extern void erq_lookup(char *, int);
-#ifdef USE_IPV6
 extern void erq_rlookupv6(char *, int);
-#endif
 
 extern void close_socket(socket_t *);
 

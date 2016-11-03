@@ -2633,9 +2633,6 @@ read_config (void)
      */
     {
         const char * defnames[] = {
-#ifndef HAS_IPV6
-                             "USE_IPV6",
-#endif
 #ifndef HAS_MYSQL
                              "USE_MYSQL",
 #endif

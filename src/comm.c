@@ -87,16 +87,6 @@
 #ifdef HAVE_SYS_TYPES_H
 #  include <sys/types.h>
 #endif
-#ifdef HAVE_NETINET_IN_H
-#  include <netinet/in.h>   /* inet_ functions / structs */
-#endif
-#ifdef HAVE_ARPA_NAMESER_H
-#  include <arpa/nameser.h> /* DNS HEADER struct */
-#endif
-#ifdef HAVE_NETDB_H
-#  include <netdb.h>
-#endif
-#include <resolv.h>
 
 #ifdef HAVE_SYS_PARAM_H
 #    include <sys/param.h>
@@ -112,9 +102,6 @@
 #    include <fcntl.h>
 #endif
 
-#ifdef SOCKET_INC
-#    include SOCKET_INC
-#endif
 
 #include "comm.h"
 #include "access_check.h"
@@ -166,12 +153,7 @@
 #if !defined (SOCKET_LIB) && !defined(SOCKET_INC)
 #    define socket_number(s) (s)
 #    define socket_ioctl  ioctl
-#    ifndef hpux
-#        define socket_select select
-#    else
-#        define socket_select(n,r,w,x,t) select(n, (int *)r, (int *)w, (int *)x, t)
-         /* Silences the compiler */
-#    endif
+#    define socket_select select
 #    define socket_read   read
 #    define socket_write  write
 #    define socket_close  close
@@ -372,6 +354,10 @@ static SOCKET_T sos[MAXNUMSOCKETS];
   /* The login sockets.
    */
 
+static int numsockets = 0;
+  /* the number of listening TCP sockets in sos
+   */
+
 static SOCKET_T udp_s = -1;
   /* The UDP socket */
 
@@ -388,7 +374,7 @@ static string_t * host_fqdn = NULL;
    * Note: this may only be one of many names.
    */
 
-static struct cached_ip host_ip = NULL;
+static struct cached_ip host_ip = {0};
 /* The IP we got, when we last resolved our own FQDN and the timestamp
  * at that time.
  */
@@ -491,7 +477,8 @@ typedef enum {
 } OutConnStatus;
 
 struct OutConn {
-    struct sockaddr_in   target;   /* Address connected to (allocated) */
+    struct sockaddr_storage target;   /* Address connected to (allocated) */
+    socklen_t            targetlen;   // length of target
     object_t           * curr_obj; /* Associated object */
     int                  socket;   /* Socket on our side */
     OutConnStatus        status;   /* Status of this entry */
@@ -513,7 +500,7 @@ static void send_dont(int);
 static void add_flush_entry(interactive_t *ip);
 static void remove_flush_entry(interactive_t *ip);
 static void clear_message_buf(interactive_t *ip);
-static void new_player(object_t *receiver, SOCKET_T new_socket, struct sockaddr_in *addr, size_t len, int login_port);
+static void new_player(object_t *receiver, SOCKET_T new_socket, struct sockaddr *addr, size_t len, int login_port);
 
 #ifdef ERQ_DEMON
 
@@ -523,110 +510,11 @@ static void shutdown_erq_demon(void);
 static void stop_erq_demon(Bool);
 static string_t * lookup_ip_entry (struct in_addr addr, Bool useErq);
 static void add_ip_entry(struct in_addr addr, const char *name);
-#ifdef USE_IPV6
 static void update_ip_entry(const char *oldname, const char *newname);
-#endif
 
 #endif /* ERQ_DEMON */
 
 static INLINE ssize_t comm_send_buf(char *msg, size_t size, interactive_t *ip);
-
-#ifdef USE_IPV6
-
-/*-------------------------------------------------------------------------*/
-
-/* Not every IPv6 supporting platform has all the defines (like AIX 4.3) */
-
-#ifndef IPV6_ADDR_SCOPE_GLOBAL
-#  define IPV6_ADDR_SCOPE_GLOBAL 0x0e
-#endif
-
-#ifndef s6_addr8
-#  define s6_addr8  __u6_addr.__u6_addr8
-#endif
-
-#ifndef s6_addr16
-#  define s6_addr16 __u6_addr.__u6_addr16
-#endif
-
-#ifndef s6_addr32
-#  define s6_addr32 __u6_addr.__u6_addr32
-#endif
-
-static inline void CREATE_IPV6_MAPPED(struct in_addr *v6, uint32 v4) {
-  v6->s6_addr32[0] = 0;
-  v6->s6_addr32[1] = 0;
-  v6->s6_addr32[2] = htonl(0x0000ffff);
-  v6->s6_addr32[3] = v4;
-}
-
-/* These are the typical IPv6 structures - we use them transparently.
- *
- * --- arpa/inet.h ---
- *
- * struct in6_addr {
- *         union {
- *                 u_int32_t u6_addr32[4];
- * #ifdef notyet
- *                 u_int64_t u6_addr64[2];
- * #endif
- *                 u_int16_t u6_addr16[8];
- *                 u_int8_t  u6_addr8[16];
- *         } u6_addr;
- * };
- * #define s6_addr32       u6_addr.u6_addr32
- * #ifdef notyet
- * #define s6_addr64       u6_addr.u6_addr64
- * #endif
- * #define s6_addr16       u6_addr.u6_addr16
- * #define s6_addr8        u6_addr.u6_addr8
- * #define s6_addr         u6_addr.u6_addr8
- *
- * --- netinet/in.h ---
- *
- * struct sockaddr_in6 {
- *    u_char                sin6_len;
- *    u_char                sin6_family;
- *    u_int16_t        sin6_port;
- *    u_int32_t        sin6_flowinfo;
- *    struct                 in6_addr        sin6_addr;
- * };
- *
- */
-
-/*-------------------------------------------------------------------------*/
-static char *
-inet6_ntoa (struct in6_addr in)
-
-/* Convert the ipv6 address <in> into a string and return it.
- * Note: the string is stored in a local buffer.
- */
-
-{
-    static char str[INET6_ADDRSTRLEN+1];
-
-    if (NULL == inet_ntop(AF_INET6, &in, str, INET6_ADDRSTRLEN))
-    {
-        perror("inet_ntop");
-    }
-    return str;
-} /* inet6_ntoa() */
-
-/*-------------------------------------------------------------------------*/
-static struct in6_addr
-inet6_addr (const char *to_host)
-
-/* Convert the name <to_host> into a ipv6 address and return it.
- */
-
-{
-    struct in6_addr addr;
-
-    inet_pton(AF_INET6, to_host, &addr);
-    return addr;
-} /* inet6_addr() */
-
-#endif /* USE_IPV6 */
 
 /*-------------------------------------------------------------------------*/
 static char *
@@ -1013,12 +901,12 @@ initialize_host_name (const char *hname)
     // the canonical fully-qualified hostname is in the first adddress
     // structure returned. We also cache the IP address we got as one of ours.
     host_fqdn = new_tabled(aiHead->ai_canonname);
-    host_ip.current_time = get_current_time();
+    host_ip.time = get_current_time();
     host_ip.name = ref_mstring(host_fqdn);
     host_ip.addrlen = aiHead->ai_addrlen;
-    memcpy(&host_ip.addr, &aiHead->ai_addr, aiHead->ai_addrlen);
+    memcpy(&host_ip.addr, aiHead->ai_addr, aiHead->ai_addrlen);
 
-    char *domain = strchr(host_fqdn, '.');
+    char *domain = strchr(get_txt(host_fqdn), '.');
     // copy from the part after the first '.'
     if (domain)
         domain_name = strdup(++domain);
@@ -1098,8 +986,9 @@ init_udp_socket(int port)
             if (setsockopt (udp_s, SOL_SOCKET, SO_REUSEADDR,
                             (char *) &tmp, sizeof (tmp)) < 0)
             {
-                perror ("setsockopt(udp_s, SO_REUSEADDR)");
-                exit(1);
+                // this may be normal, e.g. for wildcard addresses
+                debug_message("%s Could not set SO_REUSEADDR on UDP socket.\n"
+                              , time_stamp());
             }
             // Now bind it.
             if (bind(udp_s, ai->ai_addr, ai->ai_addrlen) == 0)
@@ -1218,6 +1107,26 @@ urgent_data_handler (int signo)
     urgent_data_time = current_time;
 }
 
+/*-------------------------------------------------------------------------*/
+static void INLINE
+listen_socket(SOCKET_T sd)
+/* Initialize and listen to socket <sd>.
+ * <sd> must be already created and bound AND added to the list of login
+ * sockets <sos>.
+ */
+{
+    /* Initialise the socket and allow a backlog queue of 5 connections */
+    if (listen(sd, 5) == -1) {
+        perror("listen");
+        exit(1);
+    }
+    set_socket_nonblocking(sd);
+    set_close_on_exec(sd);
+    set_socket_nosigpipe(sd);
+
+    if (socket_number(sd) >= min_nfds)
+        min_nfds = socket_number(sd)+1;
+}
 
 /*-------------------------------------------------------------------------*/
 void
@@ -1227,7 +1136,6 @@ prepare_ipc(void)
  */
 
 {
-    length_t tmp;
     int i;
     struct sigaction sa; // for installing the signal handlers
 
@@ -1245,94 +1153,6 @@ prepare_ipc(void)
     if (!telopts_do[0])
       init_telopts();
 
-    /* Loop over all given port numbers.
-     * Remember: positive number are actual port numbers to be opened,
-     * negative numbers are the fd numbers of already existing sockets.
-     */
-    for (i = 0; i < numports; i++)
-    {
-        struct sockaddr_in host_ip_addr;
-
-        memcpy(&host_ip_addr, &host_ip_addr_template, sizeof(host_ip_addr));
-
-        if (port_numbers[i] > 0)
-        {
-            /* Real port number */
-
-            host_ip_addr.sin_port = htons((u_short)port_numbers[i]);
-            sos[i] = socket(host_ip_addr.sin_family, SOCK_STREAM, 0);
-            if ((int)sos[i] == -1) {
-                perror("socket");
-                exit(1);
-            }
-            tmp = 1;
-            if (setsockopt(sos[i], SOL_SOCKET, SO_REUSEADDR
-                          , (char *) &tmp, sizeof (tmp)) < 0) {
-                perror ("setsockopt");
-                exit (1);
-            }
-            if (bind(sos[i], (struct sockaddr *)&host_ip_addr, sizeof host_ip_addr) == -1) {
-                if (errno == EADDRINUSE)
-                {
-                    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-                    int err = getnameinfo((struct sockaddr *)&host_ip_addr, 16,//alen,
-                                          hbuf, sizeof(hbuf),
-                                          sbuf, sizeof(sbuf),
-                                          NI_NUMERICSERV|NI_NUMERICHOST);
-                    if (err == 0)
-                    {
-                        fprintf(stderr, "%s Address %s Port %s already bound!\n"
-                                    , time_stamp(), hbuf, sbuf);
-                        debug_message("%s Address %s Port %s already bound!\n"
-                                      , time_stamp(), hbuf, sbuf);
-                        exit(errno);
-                    }
-                    else
-                    {
-                        fprintf(stderr, "%s Address and Port %d combination already bound %s!\n"
-                                , time_stamp(), port_numbers[i], gai_strerror(err));
-                        debug_message("%s Address and Port %d combination already bound %s!\n"
-                                      , time_stamp(), port_numbers[i], gai_strerror(err));
-                        exit(errno);
-                    }
-                }
-                else
-                {
-                    perror("bind");
-                    exit(1);
-                }
-            }
-        }
-        else
-        {
-
-            /* Existing socket */
-            sos[i] = -port_numbers[i];
-            // get and fill in the real port number associated with this
-            // inherited socket descriptor.
-            struct sockaddr_storage ss;
-            socklen_t slen = sizeof(ss);
-            if (!getsockname(sos[i], (struct sockaddr *)&ss, &slen))
-            {
-                int p = get_socket_port((struct sockaddr *)&ss, slen);
-                if (p>0)
-                    port_numbers[i] = p;
-            }
-        }
-
-        /* Initialise the socket */
-        if (listen(sos[i], 5) == -1) {
-            perror("listen");
-            exit(1);
-        }
-        set_socket_nonblocking(sos[i]);
-        set_close_on_exec(sos[i]);
-        set_socket_nosigpipe(sos[i]);
-
-        if (socket_number(sos[i]) >= min_nfds)
-            min_nfds = socket_number(sos[i])+1;
-    } /* for(i = 0..numports) */
-
     // install some signal handlers
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART; // restart syscalls after handling a signal
@@ -1348,7 +1168,143 @@ prepare_ipc(void)
     if (sigaction(SIGIO, &sa, NULL) == -1)
         perror("Unable to install signal handler for SIGIO");   // uhoh. SIGIO terminates...
 
+    /* Loop over all given port numbers and try to bind a socket for each of them.
+     * Remember: positive number are actual port numbers to be opened,
+     * negative numbers are the fd numbers of already existing sockets.
+     */
+    for (i = 0; i < numports; i++)
+    {
+        if (port_numbers[i] > 0)
+        {
+            /* Real port number */
+            // get some addresses first.
+            struct addrinfo *aiHead, *ai;
+            struct addrinfo hints = { .ai_family = PF_UNSPEC,
+                                      .ai_socktype = SOCK_STREAM,
+                                      .ai_protocol = IPPROTO_TCP,
+                                      .ai_flags = AI_DEFAULT | AI_PASSIVE | AI_NUMERICSERV};
+            char sbuf[NI_MAXSERV];
+            snprintf(sbuf, sizeof sbuf, "%d", port_numbers[i]);
+            int gaierr = getaddrinfo(host_address, sbuf, &hints, &aiHead);
+            if (gaierr)
+            {
+                fprintf(stderr, "%s Could not resolve %s Port %s: %s!\n"
+                        , time_stamp(), host_address ? host_address : "*"
+                        , sbuf, gai_strerror(gaierr));
+                debug_message("%s Could not resolve %s Port %s: %s!\n"
+                              , time_stamp(), host_address ? host_address : "*"
+                              , sbuf, gai_strerror(gaierr));
+                exit(gaierr);
+            }
+            // loop over all addresses we got and try to open a socket
+            for ( ai = aiHead; ai != NULL ; ai = ai->ai_next )
+            {
+                sos[numsockets] = socket(ai->ai_family, ai->ai_socktype,
+                                         ai->ai_protocol);
+                if ((int)sos[numsockets] == -1)
+                    continue;
+                int tmp = 1;
+                if (setsockopt(sos[i], SOL_SOCKET, SO_REUSEADDR
+                               , (char *) &tmp, sizeof (tmp)) < 0) {
+                    perror ("setsockopt");
+                    exit (1);
+                }
+                if (bind(sos[numsockets], ai->ai_addr, ai->ai_addrlen) < 0)
+                {
+                    if (errno == EADDRINUSE)
+                    {
+                        // we just report it...
+                        char hbuf[NI_MAXHOST];
+                        int err = getnameinfo(ai->ai_addr, ai->ai_addrlen,
+                                              hbuf, sizeof(hbuf),
+                                              sbuf, sizeof(sbuf),
+                                              NI_NUMERICSERV|NI_NUMERICHOST);
+                        if (err != 0)
+                        {
+                            fprintf(stderr, "%s error during getnameinfo(): %s!\n"
+                                    , time_stamp(), gai_strerror(err));
+                            debug_message("%s error during getnameinfo(): %s!\n"
+                                          , time_stamp(), gai_strerror(err));
+                            exit(err);
+                        }
+                        fprintf(stderr, "%s Address %s Port %s already bound!\n"
+                                , time_stamp(), hbuf, sbuf);
+                        debug_message("%s Address %s Port %s already bound!\n"
+                                      , time_stamp(), hbuf, sbuf);
+                        // ... and continue with the next address.
+                        socket_close(sos[numsockets]);
+                        sos[numsockets] = -1;
+                        continue;
+                    }
+                    else
+                    {
+                        // exit on all other errors
+                        perror("bind");
+                        exit(1);
+                    }
+                }
+                // We have a bound socket! Listen to it!
+                listen_socket(sos[numsockets]);
+                ++numsockets;
+                // and report success...
+                char hbuf[NI_MAXHOST];
+                int err = getnameinfo(ai->ai_addr, ai->ai_addrlen,
+                                      hbuf, sizeof(hbuf),
+                                      sbuf, sizeof(sbuf),
+                                      NI_NUMERICSERV|NI_NUMERICHOST);
+                if (err != 0)
+                {
+                    fprintf(stderr, "%s error during getnameinfo(): %s!\n"
+                            , time_stamp(), gai_strerror(err));
+                    debug_message("%s error during getnameinfo(): %s!\n"
+                                  , time_stamp(), gai_strerror(err));
+                    exit(err);
+                }
+                printf("%s Hostname '%s' address '%s:%s'\n"
+                       , time_stamp(), host_name, hbuf, sbuf);
+                debug_message("%s Hostname '%s' address '%s:%s'\n"
+                              , time_stamp(), host_name, hbuf, sbuf);
+
+                // no  socket slots free? skip the remaining addresses
+                if (numsockets >= MAXNUMSOCKETS)
+                    break;
+            }  // for aiHead
+            freeaddrinfo(aiHead);
+        }
+        else
+        {
+            /* Existing socket */
+            sos[numsockets] = -port_numbers[i];
+            // get and fill in the real port number associated with this
+            // inherited socket descriptor.
+            struct sockaddr_storage ss;
+            socklen_t slen = sizeof(ss);
+            if (!getsockname(sos[i], (struct sockaddr *)&ss, &slen))
+            {
+                int p = get_socket_port((struct sockaddr *)&ss, slen);
+                if (p>0)
+                    port_numbers[i] = p;
+            }
+            listen_socket(sos[numsockets]);
+            ++numsockets;
+        }
+
+        // stop when all socket slots are used.
+        if (numsockets >= MAXNUMSOCKETS)
+            break;
+    } // for all port numbers
+
+    // If no socket was successfully bound: exit.
+    if (numsockets < 1)
+    {
+        fprintf(stderr, "%s No login port could be opened!\n"
+                , time_stamp());
+        debug_message("%s No login port could be opened!\n"
+                      , time_stamp());
+        exit(1);
+    }
 } /* prepare_ipc() */
+
 
 /*-------------------------------------------------------------------------*/
 void
@@ -1362,7 +1318,7 @@ ipc_remove (void)
     int i;
 
     printf("%s Shutting down ipc...\n", time_stamp());
-    for (i = 0; i < numports; i++)
+    for (i = 0; i < numsockets; i++)
         socket_close(sos[i]);
 
     if (udp_s >= 0)
@@ -2322,8 +2278,6 @@ get_message (char *buff)
 
     while(MY_TRUE)
     {
-        struct sockaddr_in addr;
-        length_t length; /* length of <addr> */
         struct timeval timeout;
 
         /* --- select() on the sockets and handle ERQ --- */
@@ -2349,7 +2303,7 @@ get_message (char *buff)
 
             FD_ZERO(&readfds);
             FD_ZERO(&writefds);
-            for (i = 0; i < numports; i++) {
+            for (i = 0; i < numsockets; i++) {
                 FD_SET(sos[i], &readfds);
             } /* for */
             nfds = min_nfds;
@@ -2591,16 +2545,11 @@ get_message (char *buff)
                                 struct in_addr net_addr;
 
                                 memcpy((char*)&naddr, rp+8, sizeof(naddr));
-#ifndef USE_IPV6
                                 net_addr.s_addr = naddr;
-#else
-                                CREATE_IPV6_MAPPED(&net_addr, naddr);
-#endif
                                 add_ip_entry(net_addr, rp+12);
                             }
                             continue;
                         }
-#ifdef USE_IPV6
                         else if (handle == ERQ_HANDLE_RLOOKUPV6)
                         {
                             /* The result of a hostname lookup. */
@@ -2609,8 +2558,6 @@ get_message (char *buff)
 #ifdef DEBUG
                                 debug_message("%s Bogus reverse name lookup.\n"
                                              , time_stamp());
-#else
-                                NOOP;
 #endif
                             } else {
                                 char * space;
@@ -2630,7 +2577,6 @@ get_message (char *buff)
                             }
                             continue;
                         }
-#endif /* USE_IPV6 */
                         else
                         {
                             /* remove the callback handle after processing
@@ -2730,18 +2676,18 @@ get_message (char *buff)
 #endif /* ERQ_DEMON */
 
             /* --- Try to get a new player --- */
-            for (i = 0; i < numports; i++)
+            for (i = 0; i < numsockets; i++)
             {
                 if (FD_ISSET(sos[i], &readfds))
                 {
                     SOCKET_T new_socket;
                     struct sockaddr_storage addr;
-                    length = sizeof addr;
+                    socklen_t addrlen = sizeof addr;
                     new_socket = accept(sos[i], (struct sockaddr *)&addr
-                                              , &length);
+                                              , &addrlen);
                     if ((int)new_socket != -1)
-                        new_player( NULL, new_socket, &addr, (size_t)length
-                                  , get_socket_port((struct sockaddr *)&addr, length)
+                        new_player( NULL, new_socket, (struct sockaddr *)&addr, addrlen
+                                  , get_socket_port((struct sockaddr *)&addr, addrlen)
                                    );
                     else if ((int)new_socket == -1
                       && errno != EWOULDBLOCK && errno != EINTR
@@ -2758,13 +2704,13 @@ get_message (char *buff)
                                , "%s comm: Can't accept on socket %d "
                                  "(port %d): %s\n"
                                , time_stamp(), sos[i]
-                               , get_socket_port((struct sockaddr *)&addr, length)
+                               , get_socket_port((struct sockaddr *)&addr, addrlen)
                                , strerror(errorno)
                                );
                         debug_message("%s comm: Can't accept on socket %d "
                                       "(port %d): %s\n"
                                       , time_stamp(), sos[i]
-                                      , get_socket_port((struct sockaddr *)&addr, length)
+                                      , get_socket_port((struct sockaddr *)&addr, addrlen)
                                      , strerror(errorno)
                                      );
                         /* TODO: Was: perror(); abort(); */
@@ -2794,12 +2740,11 @@ get_message (char *buff)
         if (udp_s >= 0 && FD_ISSET(udp_s, &readfds))
 #endif
         {
-            char *ipaddr_str;
             int cnt;
-
-            length = sizeof addr;
+            struct sockaddr_storage addr;
+            socklen_t addrlen = sizeof addr;
             cnt = recvfrom(udp_s, udp_buf, sizeof(udp_buf)-1, 0
-                          , (struct sockaddr *)&addr, &length);
+                          , (struct sockaddr *)&addr, &addrlen);
             if (cnt != -1)
             {
                 string_t *udp_data;
@@ -2812,18 +2757,19 @@ get_message (char *buff)
                 }
                 else
                 {
+                    char sbuf[NI_MAXSERV];
+                    char hbuf[NI_MAXHOST];
+                    int gai_err = getnameinfo((struct sockaddr *)&addr, addrlen,
+                                              hbuf, sizeof(hbuf),
+                                              sbuf, sizeof(sbuf),
+                                              NI_NUMERICSERV|NI_NUMERICHOST);
                     command_giver = NULL;
                     current_interactive = NULL;
                     current_object = NULL;
                     trace_level = 0;
-#ifndef USE_IPV6
-                    ipaddr_str = inet_ntoa(addr.sin_addr);
-#else
-                    ipaddr_str = inet6_ntoa(addr.sin_addr);
-#endif
-                    push_c_string(inter_sp, ipaddr_str);
+                    push_c_string(inter_sp, gai_err ? "Unknown" : hbuf);
                     push_string(inter_sp, udp_data); /* adopts the ref */
-                    push_number(inter_sp, get_socket_port((struct sockaddr *)&addr, length));
+                    push_number(inter_sp, gai_err ? -1 : strtoul(sbuf,NULL,10));
                     RESET_LIMITS;
                     callback_master(STR_RECEIVE_UDP, 3);
                     CLEAR_EVAL_COST;
@@ -3043,7 +2989,7 @@ get_message (char *buff)
                          */
                         DTN(("    Empty input: save machine state %d (DATA)\n"
                           , TS_DATA));
-                        length = strlen(ip->text + ip->command_start) + 1;
+                        size_t length = strlen(ip->text + ip->command_start) + 1;
                         ip->chars_ready = length;
                         ip->save_tn_state = TS_DATA;
                         end_of_line = MY_TRUE;
@@ -3485,7 +3431,7 @@ remove_interactive (object_t *ob, Bool force)
 
 /*-------------------------------------------------------------------------*/
 void
-refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) )
+refresh_access_data(void (*add_entry)(struct sockaddr *, socklen_t, int, long*) )
 
 /* Called from access_check after the ACCESS_FILE has been (re)read, this
  * function has to call the passed callback function add_entry for every
@@ -3508,7 +3454,7 @@ refresh_access_data(void (*add_entry)(struct sockaddr_in *, int, long*) )
             if (!getsockname(this->socket, (struct sockaddr *)&addr, &length))
             {
                 int port = get_socket_port((struct sockaddr *)&addr, length);
-                (*add_entry)(&this->addr, port, &this->access_class);
+                (*add_entry)((struct sockaddr *)&this->addr, length, port, &this->access_class);
             }
         }
     }
@@ -3543,7 +3489,7 @@ set_default_combine_charset (char charset[32])
 /*-------------------------------------------------------------------------*/
 static void
 new_player ( object_t *ob, SOCKET_T new_socket
-           , struct sockaddr_in *addr, size_t addrlen
+           , struct sockaddr *addr, size_t addrlen
            , int login_port
            )
 
@@ -3592,16 +3538,13 @@ new_player ( object_t *ob, SOCKET_T new_socket
     {
         FILE *log_file = fopen (access_log, "a");
 
-        if (log_file) {
+        if (log_file)
+        {
             FCOUNT_WRITE(log_file);
             fprintf(log_file, "%s %s: %s\n"
-                   , time_stamp()
-#ifndef USE_IPV6
-                   , inet_ntoa(addr->sin_addr)
-#else
-                   , inet6_ntoa(addr->sin_addr)
-#endif
-                   , message ? "denied" : "granted");
+                    , time_stamp()
+                    , get_hostname(addr,addrlen)
+                    , message ? "denied" : "granted");
             fclose(log_file);
         }
     }
@@ -6020,7 +5963,6 @@ add_ip_entry (struct in_addr addr, const char *name)
 } /* add_ip_entry() */
 
 /*-------------------------------------------------------------------------*/
-#ifdef USE_IPV6
 
 static void
 update_ip_entry (const char *oldname, const char *newname)
@@ -6049,7 +5991,6 @@ update_ip_entry (const char *oldname, const char *newname)
 
 /*-------------------------------------------------------------------------*/
 
-#endif /* USE_IPV6 */
     
 /*-------------------------------------------------------------------------*/
 static string_t *
@@ -6076,7 +6017,7 @@ lookup_ip_entry (struct in_addr addr, Bool useErq)
             i += IPSIZE;
 
         if (!memcmp(&(iptable[i].addr.s_addr), &addr.s_addr, sizeof(iptable[i].addr.s_addr))
-         && iptable[i].name)
+            && iptable[i].name)
         {
             return iptable[i].name;
         }
@@ -6093,7 +6034,7 @@ lookup_ip_entry (struct in_addr addr, Bool useErq)
         free_mstring(iptable[ipcur].name);
 
     memcpy(&tmp, &addr, sizeof(tmp));
-#ifndef USE_IPV6
+#ifndef ip6
     ipname = new_tabled(inet_ntoa(tmp));
 #else
     ipname = new_tabled(inet6_ntoa(tmp));
@@ -6384,6 +6325,26 @@ query_host_name (void)
 } /* query_host_name() */
 
 /*-------------------------------------------------------------------------*/
+static const char *
+get_hostname(struct sockaddr *addr, socklen_t alen)
+/* Return a numeric representation of the given IP address of the host.
+ * The result is a pointer to a local static buffer.
+ */
+{
+    static char hbuf[NI_MAXHOST];
+    if (getnameinfo(addr, alen,
+                    hbuf, sizeof(hbuf),
+                    NULL, 0,
+                    NI_NUMERICHOST))
+    {
+        // hat nicht geklappt...
+        snprintf(hbuf, sizeof hbuf, "N/A");
+    }
+    return hbuf;
+    
+}
+
+/*-------------------------------------------------------------------------*/
 const char *
 get_host_ip_number (void)
 
@@ -6414,21 +6375,13 @@ get_host_ip_number (void)
             free_mstring(host_ip.name);
             host_ip.name = new_tabled(aiHead->ai_canonname);
             host_ip.addrlen = aiHead->ai_addrlen;
-            memcpy(&host_ip.addr, &aiHead->ai_addr, aiHead->addrlen);
+            memcpy(&host_ip.addr, &aiHead->ai_addr, aiHead->ai_addrlen);
             freeaddrinfo(aiHead);
             aiHead=NULL;
         }
         // if the getaddrinfo does not succeed, we use the old value anyway
-        char hbuf[NI_MAXHOST];
-        if (!getnameinfo(host_ip.addr, host_ip.addrlen,
-                         hbuf, sizeof(hbuf),
-                         NULL, 0,
-                         NI_NUMERICHOST))
-        {
-            snprintf(l_result, sizeof l_result, "\"%s\"", hbuf);
-        }
-        else if (l_result[0] == '\0')
-            snprintf(l_result, sizeof l_result, "\"%s\"", "127.0.0.1");
+        snprintf(l_result, sizeof l_result, "\"%s\"",
+                 get_hostname((struct sockaddr*)&host_ip.addr, host_ip.addrlen));
     }
 
     return l_result;
@@ -6543,21 +6496,15 @@ f_send_udp (svalue_t *sp)
  * bytes. The latter variant allows to send binary data as well.
  * Returns 1 on success, 0 on failure.
  *
- * Note: On some machines a failed send_imp() will not be registered
- * until the next send_imp() - the latter one might return '0' even
+ * Note: On some machines a failed send_udp() will not be registered
+ * until the next send_udp() - the latter one might return '0' even
  * if itself was successful.
  */
 
 {
     char *to_host = NULL;
-    int to_port;
     char *msg;
     size_t msglen;
-#ifndef USE_IPV6
-    int ip1, ip2, ip3, ip4;
-#endif /* USE_IPV6 */
-    struct sockaddr_in name;
-    struct hostent *hp;
     int ret = 0;
     svalue_t *firstarg; /* store the first argument */
     
@@ -6606,7 +6553,6 @@ f_send_udp (svalue_t *sp)
 
         {
             size_t adrlen;
-
             adrlen = mstrsize(firstarg->u.str);
             /* as there are no runtime error raised below, we just xallocate
              * and don't bother with an error handler. */
@@ -6620,48 +6566,30 @@ f_send_udp (svalue_t *sp)
             memcpy(to_host, get_txt(firstarg->u.str), adrlen);
             to_host[adrlen] = '\0';
         }
-        to_port = (sp-1)->u.number;
-
-#ifndef USE_IPV6
-        if (sscanf(to_host, "%d.%d.%d.%d", &ip1, &ip2, &ip3, &ip4) == 4)
-        {
-            name.sin_addr.s_addr = inet_addr(to_host);
-            name.sin_family = AF_INET;
-        }
-        else
-        {
-            /* TODO: Uh-oh, blocking DNS in the execution thread */
-            hp = gethostbyname(to_host);
-            if (hp == 0)
-                break;            
-            memcpy(&name.sin_addr, hp->h_addr, (size_t)hp->h_length);
-            name.sin_family = AF_INET;
-        }
-
-#else /* USE_IPV6 */
-
-        /* TODO: Uh-oh, blocking DNS in the execution thread */
-        hp = gethostbyname2(to_host, AF_INET6);
-        if (hp == 0) hp = gethostbyname2(to_host, AF_INET);
-        if (hp == 0) break;
-        memcpy(&name.sin_addr, hp->h_addr, (size_t)hp->h_length);
-
-        if (hp->h_addrtype == AF_INET)
-        {
-            CREATE_IPV6_MAPPED(&name.sin_addr, *(u_int32_t*)hp->h_addr_list[0]);
-        }
-        name.sin_family = AF_INET6;
-#endif /* USE_IPV6 */
-
-        name.sin_port = htons(to_port);
-
-        /* Send the message. */
-#ifndef SENDTO_BROKEN
-        if (sendto(udp_s, msg, msglen, 0,
-               (struct sockaddr *)&name, sizeof(name)) != (int)msglen)
-#endif
+        char to_port[NI_MAXSERV];
+        snprintf(to_port, sizeof to_port, "%"PRIdPINT, (sp-1)->u.number);
+        // Now find an address for this host name and its canonical fully-qualified
+        // domain name.
+        struct addrinfo hints;
+        struct addrinfo *aiHead, *ai;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = PF_UNSPEC;
+        hints.ai_flags = AI_DEFAULT;
+        hints.ai_socktype = SOCK_DGRAM;
+        hints.ai_protocol = IPPROTO_UDP;
+        if (!getaddrinfo(to_host, to_port, &hints, &aiHead))
             break;
-        ret = 1;
+        /* Send the message, try all addresses if needed. */
+        for ( ai = aiHead; ai != NULL ; ai = ai->ai_next )
+        {
+            if (sendto(udp_s, msg, msglen, 0,
+                       (struct sockaddr *)&ai->ai_addr, ai->ai_addrlen) != (int)msglen)
+                continue;
+            // success...
+            ret = 1;
+            break;
+        }
+        freeaddrinfo( aiHead );
     }
     /* Cleanup - an allocated buffer for the message will be on the stack 
      * above the arguments, therefore clean everything from the first argument
@@ -8057,7 +7985,8 @@ check_for_out_connections (void)
 
         user = command_giver;
         new_player( outconn[i].curr_obj, outconn[i].socket
-                  , &outconn[i].target, sizeof(outconn[i].target), 0);
+                   , (struct sockaddr*)&outconn[i].target, outconn[i].targetlen
+                   ,0);
         command_giver = user;
 
         free_object(outconn[i].curr_obj, "net_connect");
@@ -8092,6 +8021,7 @@ f_net_connect (svalue_t *sp)
     char * host;
     int    port;
     int    rc;
+    struct addrinfo *result = NULL;
 
     /* get the arguments */
     
@@ -8111,7 +8041,7 @@ f_net_connect (svalue_t *sp)
         int sfd, n, ret;
         object_t *user;
         struct addrinfo hints;
-        struct addrinfo *result, *rp;
+        struct addrinfo *rp;
         char port_string[6];
 
         // port is needed as a string
@@ -8137,20 +8067,11 @@ f_net_connect (svalue_t *sp)
         }
 
         /* Attempt the connection */
-        
         memset(&hints, 0, sizeof(struct addrinfo));
-#ifndef USE_IPV6
-        hints.ai_family = AF_INET;      // Allow only IPv4
-        hints.ai_flags = AI_ADDRCONFIG;  // only IPv4 if at least one interface with IPv4 and only IPv6 if at least one interface with IPv6
-#else
-        hints.ai_family = AF_INET6;      // Allow only IPv6
-        // only IPv6 if at least one interface with IPv6.
-        // And list IPv4 addresses as IPv4-mapped IPv6 addresses if no IPv6 addresses could be found.
-        hints.ai_flags = AI_ADDRCONFIG|AI_V4MAPPED;
-#endif
-        hints.ai_socktype = SOCK_STREAM; // TCP socket
-        hints.ai_protocol = 0;          // Any protocol
-        
+        hints.ai_family = PF_UNSPEC;
+        hints.ai_flags = AI_DEFAULT;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
         /* TODO: Uh-oh, blocking DNS in the execution thread.
          * TODO:: Better would be to start an ERQ lookup and fill in the
          * TODO:: data in the background.
@@ -8185,35 +8106,9 @@ f_net_connect (svalue_t *sp)
                 }
                 continue; // try next address
             }
-            
             set_socket_nonblocking(sfd);
             set_socket_nosigpipe(sfd);
 
-            /* On multihomed machines it is important to bind the socket to
-             * the proper IP address.
-             */
-            ret = bind(sfd, (struct sockaddr *) &host_ip_addr_template, sizeof(host_ip_addr_template));
-            if (ret==-1)
-            {
-                if (errno==ENOBUFS)
-                {
-                    // insufficient system ressources, probably transient error,
-                    // but unlikely to be different for the next address. Caller
-                    // should try again later.
-                    rc = NC_ENORESSOURCES;
-                    rp = NULL;
-                    socket_close(sfd);
-                    break;
-                }
-                else
-                {
-                    // store only last error.
-                    rc = NC_ENOBIND;
-                }
-                socket_close(sfd);
-                continue;
-            }
-            
             ret = connect(sfd, rp->ai_addr, rp->ai_addrlen);
             if (ret != -1 || errno == EINPROGRESS)
                 break;  // success! no need to try further
@@ -8230,8 +8125,6 @@ f_net_connect (svalue_t *sp)
             }
             socket_close(sfd);
         }
-        // no longer need the results from getaddrinfo()
-        freeaddrinfo(result);
         
         if (rp == NULL)
         {
@@ -8239,7 +8132,7 @@ f_net_connect (svalue_t *sp)
             // exit here.
             break;
         }
-        // at this point we a connected socket
+        // at this point we have a connected socket
 
         rc = NC_SUCCESS;
 
@@ -8247,7 +8140,8 @@ f_net_connect (svalue_t *sp)
          * we can complete it immediately. For the reason see below.
          */
         outconn[n].socket = sfd;
-        outconn[n].target = *((struct sockaddr_in *)rp->ai_addr);
+        memcpy(&outconn[n].target, rp->ai_addr, rp->ai_addrlen);
+        outconn[n].targetlen = rp->ai_addrlen;
         outconn[n].curr_obj = ref_object(current_object, "net_conect");
 
         if (errno == EINPROGRESS)
@@ -8265,13 +8159,16 @@ f_net_connect (svalue_t *sp)
 
         user = command_giver;
         inter_sp = sp;
-        new_player(current_object, sfd, (struct sockaddr_in *)rp->ai_addr, sizeof(struct sockaddr_in), 0);
+        new_player(current_object, sfd, (struct sockaddr *)rp->ai_addr, rp->ai_addrlen, 0);
         command_giver = user;
 
         /* All done - clean up */
         outconn[n].status = ocNotUsed;
         free_object(outconn[n].curr_obj, "net_connect");
     }while(0);
+    // no longer need the results from getaddrinfo()
+    if (result)
+        freeaddrinfo(result);
 
     /* Return the result */
     sp = pop_n_elems(2, sp);
@@ -8758,14 +8655,8 @@ f_interactive_info (svalue_t *sp)
 
     case II_IP_NUMBER:
         {
-            string_t *haddr;
-
-#ifndef USE_IPV6
-            haddr = new_mstring(inet_ntoa(ip->addr.sin_addr));
-#else
-            haddr = new_mstring(inet6_ntoa(ip->addr.sin_addr));
-#endif
-
+            struct sockaddr *addr = (struct sockaddr *)&ip->addr;
+            string_t *haddr = new_mstring(get_hostname(addr, addr->sa_len));
             if (!haddr)
                 errorf("Out of memory for IP address\n");
 
@@ -8779,6 +8670,7 @@ f_interactive_info (svalue_t *sp)
 
     case II_IP_ADDRESS:
         {
+            //TODO: This needs to be changed to a normalized and constant form...
             vector_t *v;
             svalue_t *svp;
             unsigned char *cp;

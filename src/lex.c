@@ -800,9 +800,8 @@ init_lexer(void)
 #ifdef HAS_IDN
     add_permanent_define("__IDNA__", -1, string_copy("1"), MY_FALSE);
 #endif
-#ifdef USE_IPV6
+// we require basic IPv6 support
     add_permanent_define("__IPV6__", -1, string_copy("1"), MY_FALSE);
-#endif
 #ifdef USE_MCCP
     add_permanent_define("__MCCP__", -1, string_copy("1"), MY_FALSE);
 #endif

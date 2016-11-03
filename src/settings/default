@@ -247,10 +247,6 @@ enable_apply_cache_stat=yes
 
 with_swap_file=LP_SWAP
 
-# Enable support for IPv6 (assuming your system supports it).
-
-enable_use_ipv6=no
-
 # The period of the random number generator. 2^19937-1 by default.
 # Possible values are
 # 607, 1279, 2281, 4253, 11213, 19937, 44497, 86243, 132049, 216091.

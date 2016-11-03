@@ -51,7 +51,6 @@ with_maxnumsockets=20
 enable_erq=no
 with_erq_max_reply=1024 
 with_erq_max_send=1024 
-enable_use_ipv6=no
 
 
 #----------- Compilation Options ----------

@@ -116,8 +116,6 @@ extern int errno;
  *                HAS_INLINE (autoconf) and NO_INLINES (Makefile).
  *   EXTRACT_UCHAR(), EXTRACT_SCHAR():
  *                extract a character from a memory location.
- *   USE_IPV6     check the definition from config.h in relation
- *                to HAS_IPV6 from autoconf.
  *   USE_MYSQL    check the definition from config.h in relation
  *                to HAS_MYSQL from autoconf.
  */
@@ -188,10 +186,6 @@ extern int errno;
 
 #define EXTRACT_UCHAR(p) (*(unsigned char *)(p))
 #define EXTRACT_SCHAR(p) (*(signed char *)(p))
-
-#if !defined(HAS_IPV6) && defined(USE_IPV6)
-#    undef USE_IPV6
-#endif
 
 #if !defined(HAS_MYSQL) && defined(USE_MYSQL)
 #    undef USE_MYSQL

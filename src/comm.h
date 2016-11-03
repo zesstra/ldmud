@@ -3,7 +3,12 @@
 
 #include "driver.h"
 #include "typedefs.h"
+
 #include <sys/types.h>
+#include <netdb.h>        /* getaddrinfo(3) et al.                       */
+#include <netinet/in.h>   /* sockaddr_in & sockaddr_in6 definition.      */
+#include <sys/socket.h>   /* Socket functions (socket(2), bind(2), etc). */
+
 #ifdef USE_MCCP
 #    include <zlib.h>
 #endif
@@ -12,33 +17,17 @@
 #include "svalue.h"
 #include "pkg-tls.h"
 
-/* TODO: Make the following a separate "my-socket.h" include, also
- * TODO:: to be used in access_check.h instead of comm.h.
- */
-#ifdef SOCKET_HEADER
-#    include SOCKET_HEADER
-#endif
-
-#if !defined (SOCKET_LIB) && !defined(SOCKET_INC)
-#    include <sys/socket.h>
-#    include <netinet/in.h>
-#    include <arpa/inet.h>
-#    define SOCKET_T int
-#endif /* SOCKET_LIB */
-
 #ifndef MAX_SOCKET_PACKET_SIZE
+// TODO: can we still live with this?
 #    define MAX_SOCKET_PACKET_SIZE  1024  /* Wild guess. */
 #endif /* MAX_SOCKET_PACKET_SIXE */
 
 
-/* --- IPv6 --- */
-
-#ifdef USE_IPV6
-
+#if 0
 /* For IPv6 we defined macros for the 'old' sockaddr member names
  * which expand into the ipv6 names.
  */
-
+// TODO: remove them and review the code for correct usages
 #define sockaddr_in sockaddr_in6
 
 #define sin_port    sin6_port
@@ -46,20 +35,19 @@
 #define sin_family  sin6_family
 #define s_addr      s6_addr
 #define in_addr     in6_addr
+#endif // 0
 
 #if defined(__APPLE__) && defined(__MACH__) && !defined(s6_addr32)
-
 /* These are non-standard defines, and some OS don't offer them
  * by default: OS-X
  */
-
 #  define s6_addr8  __u6_addr.__u6_addr8
 #  define s6_addr16 __u6_addr.__u6_addr16
 #  define s6_addr32 __u6_addr.__u6_addr32
 #endif
 
-#endif /* USE_IPV6 */
-
+// our name for socket descriptors
+#define SOCKET_T int
 
 /* --- Macros --- */
 
@@ -183,14 +171,14 @@ struct input_s {
  */
 
 struct interactive_s {
-    SOCKET_T socket;            /* The socket structure */
+    SOCKET_T socket;            /* The socket descriptor */
     object_t *ob;               /* Points back to the associated object */
     input_t  *input_handler;    /* != NULL: defines function to be
                                    called with next input line */
     object_t *modify_command;   /* modify_command() handler() */
     svalue_t prompt;            /* The prompt to print. */
-    struct sockaddr_in addr;    /* Address of connected user */
-
+    struct sockaddr_storage addr;
+                                /* socket struct of connected user */
     CBool closing;              /* True when closing this socket. */
     CBool tn_enabled;           /* True: telnet machine enabled */
     char do_close;              /* Bitflags: Close this down; Proto-ERQ. */
@@ -434,7 +422,7 @@ extern void abort_input_handler(interactive_t *ip);
 extern input_t *get_input_handler(interactive_t *ip, input_type_t type);
 
 extern char *query_host_name(void);
-extern char *get_host_ip_number(void);
+extern const char *get_host_ip_number(void);
 extern svalue_t *f_remove_interactive(svalue_t *sp);
 
 #ifdef DEBUG

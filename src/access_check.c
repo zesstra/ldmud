@@ -143,7 +143,7 @@ static time_t last_read_time = 0;
 
 /*-------------------------------------------------------------------------*/
 static struct access_class *
-find_access_class (struct sockaddr_in *full_addr, int port)
+find_access_class (struct sockaddr *full_addr, socklen_t addrlen, int port)
 
 /* Find and return the class structure for the given IP <full_addr> at
  * the current time. Return NULL if no rule covers the IP at this time.
@@ -204,7 +204,7 @@ find_access_class (struct sockaddr_in *full_addr, int port)
 
 /*-------------------------------------------------------------------------*/
 static void
-add_access_entry (struct sockaddr_in *full_addr, int login_port, long *idp)
+add_access_entry (struct sockaddr *full_addr, socklen_t addrlen, int login_port, long *idp)
 
 /* Find the class structure for <full_addr> and increments its count
  * of users. The id of the class is put into *idp.
@@ -430,7 +430,7 @@ file_end: /* emergency exit from the loop */
 
 /*-------------------------------------------------------------------------*/
 char *
-allow_host_access (struct sockaddr_in *full_addr, int login_port, long *idp)
+allow_host_access (struct sockaddr *full_addr, socklen_t addrlen, int login_port, long *idp)
 
 /* Check if the IP address <full_addr> is allowed access at the current
  * time. Return NULL if access is granted, else an error message.
@@ -459,7 +459,7 @@ allow_host_access (struct sockaddr_in *full_addr, int login_port, long *idp)
         read_access_file();
     }
 
-    acp = find_access_class(full_addr, login_port);
+    acp = find_access_class(full_addr, addrlen, login_port);
     if (acp) {
         if (acp->usage >= acp->max_usage)
             return acp->message;

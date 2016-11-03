@@ -422,10 +422,15 @@ main (int argc, char **argv)
               , time_stamp(), drivertag()
               );
 
+        mstring_init();
+        /* Also initializes the standard strings, which may be required
+         * early on should an error happen.
+         */
+        
         /* Setup comm::host_name, so that we can open the debug.log file
          * with the proper name. This also sets up the default domain name.
          * Note: Please keep in mind, that both - host_name and domain_name -
-         * may be only one of multiple, that system has.
+         * may be only one of multiple, that this system has.
          */
         initialize_host_name(hostname);
         if (hostname)
@@ -476,10 +481,7 @@ main (int argc, char **argv)
           /* This also assures the existance of the fd for the debug log */
 
         reserve_memory();
-        mstring_init();
-          /* Also initializes the standard strings, which may be required
-           * early on should an error happen.
-           */
+
 
 #ifdef USE_TLS
         tls_global_init();
@@ -1954,9 +1956,7 @@ options (void)
 #  endif
                                 ")\n"
 #endif
-#ifdef USE_IPV6
                               , "IPv6 supported\n"
-#endif
 #ifdef USE_MCCP
                               , "MCCP supported\n"
 #endif

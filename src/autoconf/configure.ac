@@ -215,7 +215,6 @@ AC_MY_ARG_ENABLE(compat-mode,no,,[Enable compat mode])
 AC_MY_ARG_ENABLE(strict-euids,no,,[Enforce euids for loading objects])
 AC_MY_ARG_ENABLE(filename-spaces,no,,[Allow space characters in filenames])
 AC_MY_ARG_ENABLE(share-variables,no,,[Enable clone initialization from blueprint variable values])
-AC_MY_ARG_ENABLE(use-ipv6,no,,[Enables support for IPv6])
 AC_MY_ARG_ENABLE(use-mccp,no,,[Enables MCCP support])
 AC_MY_ARG_ENABLE(use-mysql,no,,[Enables mySQL support])
 AC_MY_ARG_ENABLE(use-pgsql,no,,[Enables PostgreSQL support])
@@ -492,7 +491,6 @@ AC_CDEF_FROM_ENABLE(strict_euids)
 AC_CDEF_FROM_ENABLE(filename_spaces)
 AC_CDEF_FROM_ENABLE(share_variables)
 AC_CDEF_FROM_ENABLE(use_mccp)
-AC_CDEF_FROM_ENABLE(use_ipv6)
 AC_CDEF_FROM_ENABLE(use_deprecated)
 AC_CDEF_FROM_ENABLE(use_parse_command)
 AC_CDEF_FROM_ENABLE(use_process_string)
@@ -931,58 +929,6 @@ lp_cv_func_inet_ntoa_ok=yes
 if test "$lp_cv_func_inet_ntoa_ok" = "yes" ; then
 dnl TODO: Is there any platform where this is not the case?
   AC_DEFINE(INET_NTOA_OK, 1, [Is the library function inet_ntoa() compatible with the compiler?])
-fi
-
-# --- IPV6 ---
-
-AC_CACHE_CHECK(for IPv6 support,lp_cv_has_ipv6,
-    saveflags="$CFLAGS"
-    CFLAGS="$CFLAGS -I/usr/inet6/include"
-    AC_TRY_COMPILE([
-#include <sys/types.h>
-#include <netinet/in.h>
-
-struct sockaddr_in6 foo(void)
-{
-    static struct sockaddr_in6 ad;
-    
-    return ad;
-}
-    ],,lp_cv_has_ipv6=yes,
-    lp_cv_has_ipv6=no
-    CFLAGS="$saveflags"
-))
-if test "$lp_cv_has_ipv6" = "yes"; then
-    AC_DEFINE(HAS_IPV6, 1, [Does the machine offer IPv6?])
-    if test "$enable_use_ipv6" = "yes"; then
-        AC_CACHE_CHECK(if -linet6 is needed, lp_cv_need_lib_inet6,
-            AC_TRY_RUN([
-#include <sys/types.h>
-#include <netinet/in.h>
-void t (void)
-{
-    struct sockaddr_in6 ad;
-    inet6_ntoa(ad.sin_addr);
-}
-int main(void)
-{
-    return 0;
-}
-            ],
-            lp_cv_need_lib_inet6=no,
-            lp_cv_need_lib_inet6=yes
-        ))
-        if test "$lp_cv_need_lib_inet6" = "yes"; then
-            AC_CHECK_LIB(inet6,main, LIBS="$LIBS -linet6")
-        fi
-    fi
-else
-    if test "$enable_use_ipv6" = "yes"; then
-        echo "IPV6 not supported - disabling IPV6 support."
-        AC_NOT_AVAILABLE(use-ipv6)
-    fi
-    cdef_use_ipv6="#undef"
-    enable_use_ipv6=no
 fi
 
 # --- TLS ---
@@ -2715,7 +2661,6 @@ AC_SUBST(cdef_compat_mode)
 AC_SUBST(cdef_strict_euids)
 AC_SUBST(cdef_filename_spaces)
 AC_SUBST(cdef_share_variables)
-AC_SUBST(cdef_use_ipv6)
 AC_SUBST(cdef_use_mysql)
 AC_SUBST(cdef_use_pgsql)
 AC_SUBST(cdef_use_sqlite)

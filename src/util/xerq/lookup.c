@@ -126,7 +126,6 @@ erq_lookup(char *mesg, int len)
 } /* erq_lookup() */
 
 /*-------------------------------------------------------------------------*/
-#ifdef USE_IPV6
 
 void
 erq_rlookupv6(char *mesg, int msglen)
@@ -194,8 +193,6 @@ erq_rlookupv6(char *mesg, int msglen)
 
     free(buf);
 } /* erq_rlookupv6() */
-
-#endif /* USE_IPV6 */
 
 /***************************************************************************/
 

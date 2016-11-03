@@ -95,9 +95,7 @@ typedef int length_t;
 
 #include "config.h"
 
-#ifdef USE_IPV6
-#    define __IPV6__
-#endif
+#define __IPV6__
 
 #include "erq.h"
 
